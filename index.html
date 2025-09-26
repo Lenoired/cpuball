@@ -49,15 +49,14 @@
 </head>
 <body>
     <div id="container">
-        <h1>Monolith CPU Benchmark</h1>
-        <p>A path tracing benchmark.</p>
+        <h1>Monolith CPU Benchmark (Pathtracer)</h1>
+        <p>A path tracing benchmark with extreme geometric complexity to test your CPU's floating-point performance.</p>
         <canvas id="renderCanvas" width="1600" height="900"></canvas>
         <div id="progressBar">
             <div id="progressFill"></div>
             <div id="progressText"></div>
         </div>
         <div id="controls">
-    
             <div class="input-group">
                 <label for="benchmarkSelector">Benchmark Preset:</label>
                 <select id="benchmarkSelector">
@@ -125,7 +124,7 @@
                     }
                 };
                 try {
-                    // --- CHANGE: Dynamically import the correct JS glue file ---
+                    // This now receives the FULL, correct URL
                     importScripts(e.data.jsUrl);
                 } catch (err) {
                     self.postMessage({ ready: false, error: 'importScripts failed for ' + e.data.jsUrl });
@@ -193,6 +192,10 @@
             let wasmBinaries = {};
             let workerUrl = null;
 
+            // --- CAMBIO CLAVE: Determinar la ruta base correcta ---
+            const fullPath = self.location.href;
+            const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
+
             threadInput.value = navigator.hardwareConcurrency || 4;
             
             const RENDER_WIDTH = canvas.width, RENDER_HEIGHT = canvas.height;
@@ -203,7 +206,8 @@
                 if (wasmBinaries[benchmarkName]) return;
                 progressText.textContent = `Loading ${benchmarkName.toUpperCase()} WASM...`;
                 progressBar.style.display = 'block';
-                const wasmResponse = await fetch(`raytracer_${benchmarkName}.wasm`);
+                // --- CAMBIO CLAVE: Usar la ruta base para encontrar el archivo .wasm ---
+                const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
                 wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
 
                 if (!workerUrl) {
@@ -236,7 +240,8 @@
                 }
 
                 let initCount = 0;
-                const jsUrl = self.location.origin + `/raytracer_${benchmarkName}.js`;
+                // --- CAMBIO CLAVE: Construir la URL completa para el .js y pasarla al worker ---
+                const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
                 const wasmBinary = wasmBinaries[benchmarkName];
 
                 for (const workerObj of runningWorkers) {
