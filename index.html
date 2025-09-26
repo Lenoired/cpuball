@@ -1,433 +1,340 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monolith CPU Benchmark</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Monolith CPU Benchmark (WASM) — Definitive Edition</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: #121212;
-            color: #e0e0e0;
-            margin: 0;
-            padding: 1rem;
-            box-sizing: border-box;
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            background-color: #121212; 
+            color: #e0e0e0; 
+            margin: 0; 
+            padding: 1rem; 
+            box-sizing: border-box; 
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
-        #container {
-            text-align: center;
-            background-color: #1e1e1e;
-            padding: 2rem;
-            border-radius: 12px;
-            width: 100%;
-            max-width: 900px;
+        input, textarea, select {
+            -webkit-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
         }
-        h1 {
-            color: #ffffff;
-            margin-top: 0;
-            font-size: 2.5em;
-        }
-        p {
-            max-width: 650px;
-            margin: 0.5rem auto 1rem auto;
-            color: #aaa;
-        }
-        canvas {
-            background-color: #000;
-            border-radius: 8px;
-            margin-top: 1rem;
-            width: 100%;
-            height: auto;
-            border: 1px solid #333;
-        }
-        #controls {
-            margin: 1.5rem 0;
-        }
-        #startButton {
-            padding: 14px 28px;
-            font-size: 1.3em;
-            font-weight: bold;
-            cursor: pointer;
-            border: none;
-            border-radius: 8px;
-            background-color: #d93025;
-            color: white;
-            transition: background-color 0.2s ease;
-        }
-        #startButton:disabled {
-            background-color: #555;
-            cursor: not-allowed;
-        }
-        #startButton:not(:disabled):hover {
-            background-color: #e84c4c;
-        }
-        #results {
-            margin-top: 1rem;
-            background-color: #2a2a2a;
-            padding: 1rem 1.5rem;
-            border-radius: 8px;
-            display: inline-block;
-        }
-        #results p {
-            margin: 0.5rem 0;
-            font-size: 1.2em;
-            text-align: center;
-            color: #fff;
-            min-width: 250px;
-        }
-        #progressBar {
-            width: 100%;
-            height: 28px;
-            background-color: #333;
-            border-radius: 14px;
-            margin-top: 1.5rem;
-            overflow: hidden;
-            display: none;
-        }
-        #progressFill {
-            width: 0%;
-            height: 100%;
-            background-color: #d93025;
-            transition: width 0.1s linear;
-        }
+        #container { text-align: center; background-color: #1e1e1e; padding: 2rem; border-radius: 12px; width: 100%; max-width: 1100px; }
+        h1 { color: #ffffff; margin-top: 0; font-size: 2.5em; }
+        p { max-width: 650px; margin: 0.5rem auto 1rem auto; color: #aaa; }
+        canvas { background-color: #000; border-radius: 8px; margin-top: 1rem; width: 100%; height: auto; border: 1px solid #333; }
+        #controls { margin: 1.5rem 0; }
+        .input-group { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
+        .thread-info-text { color: #888; opacity: 0.7; font-size: 0.9em; font-style: italic; margin-right: 15px; }
+        .input-group label { font-size: 1.1em; }
+        #threadInput, #benchmarkSelector { padding: 10px; font-size: 1.1em; border-radius: 8px; border: 1px solid #333; background-color: #2a2a2a; color: #e0e0e0; }
+        #threadInput { width: 80px; text-align: center; }
+        .button-group { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
+        .benchmark-button { padding: 14px 28px; font-size: 1.1em; font-weight: bold; cursor: pointer; border: none; border-radius: 8px; background-color: #d93025; color: white; transition: background-color 0.2s ease; }
+        .benchmark-button:disabled { background-color: #555; cursor: not-allowed; }
+        .benchmark-button:not(:disabled):hover { background-color: #e84c4c; }
+        #results { margin-top: 1rem; background-color: #2a2a2a; padding: 1rem 1.5rem; border-radius: 8px; display: inline-block; min-width: 350px; }
+        #results p { margin: 0.5rem 0; font-size: 1.2em; text-align: left; color: #fff; }
+        #results strong { display: inline-block; width: 200px; }
+        #progressBar { width: 100%; height: 28px; background-color: #333; border-radius: 14px; margin-top: 1.5rem; overflow: hidden; display: none; position: relative; }
+        #progressFill { width: 0%; height: 100%; background-color: #d93025; transition: width 0.1s linear; }
+        #progressText { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; text-shadow: 1px 1px 2px black; }
     </style>
 </head>
 <body>
-
     <div id="container">
         <h1>Monolith CPU Benchmark</h1>
-        <p>A deterministic ray tracing benchmark to test your CPU's performance.</p>
-        <canvas id="renderCanvas" width="1280" height="720"></canvas>
-        <div id="progressBar"><div id="progressFill"></div></div>
+        <p>A path tracing benchmark.</p>
+        <canvas id="renderCanvas" width="1600" height="900"></canvas>
+        <div id="progressBar">
+            <div id="progressFill"></div>
+            <div id="progressText"></div>
+        </div>
         <div id="controls">
-            <button id="startButton">Start Benchmark</button>
+    
+            <div class="input-group">
+                <label for="benchmarkSelector">Benchmark Preset:</label>
+                <select id="benchmarkSelector">
+                    <option value="64">Light (64 Samples)</option>
+                    <option value="256" selected>Medium (256 Samples)</option>
+                    <option value="512">Heavy (512 Samples)</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <span class="thread-info-text">Wrong thread count? Change it manually.</span>
+                <label for="threadInput">Threads:</label>
+                <input type="number" id="threadInput" title="Enter the number of threads for the multi-threaded test." min="1">
+            </div>
+            <div class="button-group">
+                <button id="startSingleButton" class="benchmark-button">Start Single-Threaded</button>
+                <button id="startMultiButton" class="benchmark-button">Start Multi-Threaded</button>
+            </div>
         </div>
         <div id="results">
-            <p><strong>Threads:</strong> <span id="threads">-</span></p>
-            <p><strong>Time:</strong> <span id="time">-</span></p>
+            <p><strong>Single-thread Time:</strong> <span id="singleThreadTime">-</span></p>
+            <p><strong>Multi-thread Time:</strong> <span id="multiThreadTime">-</span></p>
         </div>
     </div>
 
-    <script id="workerScript" type="text/worker">
-        const V = {
-            create: (x = 0, y = 0, z = 0) => ({ x, y, z }),
-            dot: (v1, v2) => v1.x * v2.x + v1.y * v2.y + v1.z * v2.z,
-            subtract: (v1, v2) => ({ x: v1.x - v2.x, y: v1.y - v2.y, z: v1.z - v2.z }),
-            add: (v1, v2) => ({ x: v1.x + v2.x, y: v1.y + v2.y, z: v1.z + v2.z }),
-            scale: (v, s) => ({ x: v.x * s, y: v.y * s, z: v.z * s }),
-            magnitude(v) { return Math.sqrt(this.dot(v, v)); },
-            normalize(v) { const m = this.magnitude(v); return m > 0 ? this.scale(v, 1/m) : this.create(); },
-            reflect(v, normal) { return this.subtract(v, this.scale(normal, 2 * this.dot(v, normal))); },
-            cross: (v1, v2) => ({ x: v1.y*v2.z - v1.z*v2.y, y: v1.z*v2.x - v1.x*v2.z, z: v1.x*v2.y - v1.y*v2.x })
-        };
-        const C = {
-            scale: (c, s) => ({ r: c.r * s, g: c.g * s, b: c.b * s }),
-            add: (c1, c2) => ({ r: c1.r + c2.r, g: c1.g + c2.g, b: c1.b + c2.b }),
-            multiply: (c1, c2) => ({ r: c1.r * c2.r / 255, g: c1.g * c2.g / 255, b: c1.b * c2.b / 255 })
-        };
-        function randomInUnitSphere() {
-            while (true) {
-                const p = V.create(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1);
-                if (V.dot(p, p) < 1) return p;
-            }
+    <script id="worker-script" type="text/worker">
+        var Module = null;
+        var wasmInstance = null;
+        var renderTile = null;
+        var freeFunc = null;
+
+        function getHeapU8(mod) {
+            if (!mod) { if (typeof HEAPU8 !== 'undefined') return HEAPU8; return null; }
+            if (mod.HEAPU8) return mod.HEAPU8;
+            if (mod.asm && mod.asm.HEAPU8) return mod.asm.HEAPU8;
+            if (typeof HEAPU8 !== 'undefined') return HEAPU8;
+            return null;
         }
-        function refract(uv, n, etai_over_etat) {
-            const cos_theta = Math.min(V.dot(V.scale(uv, -1), n), 1.0);
-            const r_out_perp = V.scale(V.add(uv, V.scale(n, cos_theta)), etai_over_etat);
-            const r_out_parallel = V.scale(n, -Math.sqrt(Math.abs(1.0 - V.dot(r_out_perp, r_out_perp))));
-            return V.add(r_out_perp, r_out_parallel);
-        }
-        function reflectance(cosine, ref_idx) {
-            let r0 = (1 - ref_idx) / (1 + ref_idx);
-            r0 = r0 * r0;
-            return r0 + (1 - r0) * Math.pow((1 - cosine), 5);
-        }
-        function trace(ray, scene, depth) {
-            if (depth <= 0) return { r: 0, g: 0, b: 0 };
-            let hit = { dist: Infinity, obj: null };
-            for (const obj of scene.objects) {
-                const dist = intersect(ray, obj);
-                if (dist > 1e-4 && dist < hit.dist) {
-                    hit = { dist, obj };
+
+        function onModuleReady(m) {
+            wasmInstance = m || Module;
+            try {
+                if (typeof wasmInstance.cwrap !== 'function') {
+                    if (typeof Module !== 'undefined' && typeof Module.cwrap === 'function') wasmInstance = Module;
                 }
+            } catch (err) { console.error('cwrap lookup error', err); }
+
+            if (!wasmInstance || typeof wasmInstance.cwrap !== 'function') {
+                self.postMessage({ ready: false, error: 'cwrap not found on module' });
+                return;
             }
-            if (!hit.obj) return scene.background;
-            const hitPoint = V.add(ray.origin, V.scale(ray.direction, hit.dist));
-            const normal = getNormal(hitPoint, hit.obj);
-            const material = hit.obj.material;
-            if (material.emissive) {
-                return material.emissive;
-            }
-            if (material.reflectivity > Math.random()) {
-                const reflected = V.reflect(V.normalize(ray.direction), normal);
-                scatteredRay = { origin: hitPoint, direction: V.add(reflected, V.scale(randomInUnitSphere(), material.fuzz || 0)) };
-                attenuation = material.color;
-                if (V.dot(scatteredRay.direction, normal) > 0) {
-                     return C.multiply(attenuation, trace(scatteredRay, scene, depth - 1));
-                }
-                return {r:0,g:0,b:0};
-            }
-            if (material.transparency > 0) {
-                attenuation = {r:255, g:255, b:255};
-                const refraction_ratio = V.dot(ray.direction, normal) < 0 ? (1.0 / material.refractiveIndex) : material.refractiveIndex;
-                const unit_direction = V.normalize(ray.direction);
-                const cos_theta = Math.min(V.dot(V.scale(unit_direction,-1), normal), 1.0);
-                const sin_theta = Math.sqrt(1.0 - cos_theta*cos_theta);
-                const cannot_refract = refraction_ratio * sin_theta > 1.0;
-                let direction;
-                if (cannot_refract || reflectance(cos_theta, refraction_ratio) > Math.random()) {
-                    direction = V.reflect(unit_direction, normal);
-                } else {
-                    direction = refract(unit_direction, normal, refraction_ratio);
-                }
-                scatteredRay = { origin: hitPoint, direction };
-                return C.multiply(attenuation, trace(scatteredRay, scene, depth - 1));
-            }
-            const diffuseDir = V.normalize(V.add(normal, randomInUnitSphere()));
-            scatteredRay = { origin: hitPoint, direction: diffuseDir };
-            attenuation = material.color;
-            return C.multiply(attenuation, trace(scatteredRay, scene, depth - 1));
+            
+            wasmInstance.cwrap('initialize_scene', null, [])();
+
+            renderTile = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'string', 'number', 'number']);
+            freeFunc = wasmInstance.cwrap('free_memory', null, ['number']);
+            self.postMessage({ ready: true });
         }
-        function intersect(ray, obj) {
-            if (obj.type === 'sphere') {
-                const oc = V.subtract(ray.origin, obj.center);
-                const a = V.dot(ray.direction, ray.direction);
-                const b = 2 * V.dot(oc, ray.direction);
-                const c = V.dot(oc, oc) - obj.radius * obj.radius;
-                const discriminant = b * b - 4 * a * c;
-                if (discriminant < 0) return -1;
-                const t = (-b - Math.sqrt(discriminant)) / (2 * a);
-                return t > 1e-4 ? t : -1;
-            }
-            if (obj.type === 'plane') {
-                const denom = V.dot(obj.normal, ray.direction);
-                if (Math.abs(denom) > 1e-4) {
-                    const t = V.dot(V.subtract(obj.point, ray.origin), obj.normal) / denom;
-                    if (t >= 1e-4) return t;
-                }
-                return -1;
-            }
-            return -1;
-        }
-        function getNormal(point, obj) {
-            if (obj.type === 'sphere') return V.normalize(V.subtract(point, obj.center));
-            return obj.normal;
-        }
-        self.onmessage = function(e) {
-            const { tile, canvasWidth, canvasHeight, scene, samplesPerPixel, maxDepth } = e.data;
-            const { x: tileX, y: tileY, size: tileSize } = tile;
-            const pixelData = new Uint8ClampedArray(tileSize * tileSize * 4);
-            for (let yOffset = 0; yOffset < tileSize; yOffset++) {
-                const y = tileY + yOffset;
-                if (y >= canvasHeight) continue;
-                for (let xOffset = 0; xOffset < tileSize; xOffset++) {
-                    const x = tileX + xOffset;
-                    if (x >= canvasWidth) continue;
-                    let totalColor = { r: 0, g: 0, b: 0 };
-                    for (let s = 0; s < samplesPerPixel; s++) {
-                        const camX = (x + Math.random()) / canvasWidth;
-                        const camY = (y + Math.random()) / canvasHeight;
-                        const ray = {
-                            origin: scene.camera.origin,
-                            direction: V.normalize(V.subtract(
-                                V.add(scene.camera.lowerLeft, V.add(V.scale(scene.camera.horizontal, camX), V.scale(scene.camera.vertical, camY))),
-                                scene.camera.origin
-                            ))
-                        };
-                        totalColor = C.add(totalColor, trace(ray, scene, maxDepth));
+
+        self.onmessage = async function(e) {
+            if (e.data && e.data.wasmBinary) {
+                Module = {
+                    wasmBinary: e.data.wasmBinary,
+                    onRuntimeInitialized: function() {
+                        try { onModuleReady(Module); } catch (err) { console.error('onRuntimeInitialized error', err); }
                     }
-                    const scale = 1 / samplesPerPixel;
-                    const index = (yOffset * tileSize + xOffset) * 4;
-                    pixelData[index]     = Math.sqrt(totalColor.r * scale / 255) * 255;
-                    pixelData[index + 1] = Math.sqrt(totalColor.g * scale / 255) * 255;
-                    pixelData[index + 2] = Math.sqrt(totalColor.b * scale / 255) * 255;
-                    pixelData[index + 3] = 255;
+                };
+                try {
+                    // --- CHANGE: Dynamically import the correct JS glue file ---
+                    importScripts(e.data.jsUrl);
+                } catch (err) {
+                    self.postMessage({ ready: false, error: 'importScripts failed for ' + e.data.jsUrl });
+                    return;
                 }
+                try {
+                    if (typeof createModule === 'function') {
+                        const maybePromise = createModule(Module);
+                        if (maybePromise && typeof maybePromise.then === 'function') {
+                            maybePromise.then(m => onModuleReady(m)).catch(err => {
+                                self.postMessage({ ready: false, error: 'createModule rejected' });
+                            });
+                        } else { onModuleReady(maybePromise || Module); }
+                        return;
+                    }
+                } catch (err) { console.warn('factory invocation attempt failed', err); }
+                return;
             }
-            self.postMessage({ pixelData, tile });
+
+            if (!renderTile || !wasmInstance) { return; }
+
+            const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth } = e.data;
+            if (!tile) return;
+            
+            const sceneArg = ""; 
+            let pixelDataPtr = 0;
+            try {
+                pixelDataPtr = renderTile(tile.x, tile.y, tile.size, canvasWidth, canvasHeight, sceneArg, samplesPerPixel, maxDepth);
+            } catch (err) { console.error('renderTile call failed', err); return; }
+
+            if (!pixelDataPtr) { console.error('renderTile returned null/0 pointer'); return; }
+
+            const heap = getHeapU8(wasmInstance);
+            if (!heap || !heap.buffer) { console.error('HEAPU8 not available after render'); return; }
+
+            const byteLength = tile.size * tile.size * 4;
+            const view = new Uint8ClampedArray(heap.buffer, pixelDataPtr, byteLength);
+            const copied = new Uint8ClampedArray(byteLength);
+            copied.set(view);
+
+            if (freeFunc) { try { freeFunc(pixelDataPtr); } catch (err) { console.warn('free attempt failed', err); } }
+
+            try {
+                self.postMessage({ pixelData: copied, tile }, [copied.buffer]);
+            } catch (err) {
+                self.postMessage({ pixelData: copied.slice(), tile }, []);
+            }
         };
     </script>
 
     <script>
         (function() {
-            const startButton = document.getElementById('startButton');
+            const startSingleButton = document.getElementById('startSingleButton');
+            const startMultiButton = document.getElementById('startMultiButton');
+            const threadInput = document.getElementById('threadInput');
+            const benchmarkSelector = document.getElementById('benchmarkSelector');
             const canvas = document.getElementById('renderCanvas');
             const ctx = canvas.getContext('2d');
-            const threadsEl = document.getElementById('threads');
-            const timeEl = document.getElementById('time');
+            const singleThreadTimeEl = document.getElementById('singleThreadTime');
+            const multiThreadTimeEl = document.getElementById('multiThreadTime');
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+
+            let wasmBinaries = {};
+            let workerUrl = null;
+
+            threadInput.value = navigator.hardwareConcurrency || 4;
             
-            const RENDER_WIDTH = canvas.width;
-            const RENDER_HEIGHT = canvas.height;
-            const SAMPLES_PER_PIXEL = 100;
-            const MAX_DEPTH = 10; 
+            const RENDER_WIDTH = canvas.width, RENDER_HEIGHT = canvas.height;
+            const MAX_DEPTH = 25;
             const TILE_SIZE = 64;
-            
-            const PRNG = {
-                seed: 1337,
-                random: function() {
-                    this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
-                    return this.seed / 4294967296;
-                },
-                reset: function() {
-                    this.seed = 1337;
-                }
-            };
 
-            const V = {
-                create: (x = 0, y = 0, z = 0) => ({ x, y, z }),
-                dot: (v1, v2) => v1.x * v2.x + v1.y * v2.y + v1.z * v2.z,
-                subtract: (v1, v2, out = {}) => { out.x = v1.x - v2.x; out.y = v1.y - v2.y; out.z = v1.z - v2.z; return out; },
-                add: (v1, v2, out = {}) => { out.x = v1.x + v2.x; out.y = v1.y + v2.y; out.z = v1.z + v2.z; return out; },
-                scale: (v, s) => ({ x: v.x * s, y: v.y * s, z: v.z * s }),
-                magnitude(v) { return Math.sqrt(this.dot(v, v)); },
-                normalize(v) { const m = this.magnitude(v); return m > 0 ? this.scale(v, 1/m) : this.create(); },
-                cross: (v1, v2) => ({ x: v1.y * v2.z - v1.z * v2.y, y: v1.z * v2.x - v1.x * v2.z, z: v1.x * v2.y - v1.y * v2.x })
-            };
-            
-            function setupCamera(width, height) {
-                const aspectRatio = width / height;
-                const origin = V.create(0, 2, -8);
-                const lookAt = V.create(0, 0, 0);
-                const vup = V.create(0, -1, 0); 
-                const focusDist = V.magnitude(V.subtract(origin, lookAt));
-                const viewportHeight = 2.0;
-                const viewportWidth = aspectRatio * viewportHeight;
+            async function prepareWasm(benchmarkName) {
+                if (wasmBinaries[benchmarkName]) return;
+                progressText.textContent = `Loading ${benchmarkName.toUpperCase()} WASM...`;
+                progressBar.style.display = 'block';
+                const wasmResponse = await fetch(`raytracer_${benchmarkName}.wasm`);
+                wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
 
-                const w = V.normalize(V.subtract(origin, lookAt));
-                const u = V.normalize(V.cross(vup, w));
-                const v = V.cross(w, u);
-
-                const horizontal = V.scale(u, viewportWidth * focusDist);
-                const vertical = V.scale(v, viewportHeight * focusDist);
-                let lowerLeft = V.subtract(origin, V.scale(horizontal, 0.5));
-                lowerLeft = V.subtract(lowerLeft, V.scale(vertical, 0.5), lowerLeft);
-                lowerLeft = V.subtract(lowerLeft, V.scale(w, focusDist), lowerLeft);
-
-                return { origin, horizontal, vertical, lowerLeft };
-            }
-            
-            function createScene() {
-                PRNG.reset();
-                const objects = [
-                    { type: 'plane', point: { x: 0, y: -0.5, z: 0 }, normal: { x: 0, y: 1, z: 0 }, material:  { color: { r: 100, g: 100, b: 100 }, reflectivity: 0.1 } },
-                    { type: 'sphere', center: { x: 0, y: 0.2, z: 0 }, radius: 0.7, material: { transparency: 1.0, refractiveIndex: 1.5 } },
-                    { type: 'sphere', center: { x: -2, y: 0, z: 0 }, radius: 0.5, material: { color: { r: 200, g: 200, b: 50 }, reflectivity: 0 } },
-                    { type: 'sphere', center: { x: 2, y: 0, z: 0 }, radius: 0.5, material: { color: { r: 220, g: 220, b: 220 }, reflectivity: 1.0, fuzz: 0.0 } },
-                    { type: 'sphere', center: { x: 0, y: 5, z: 2 }, radius: 1, material: { emissive: { r: 255*3, g: 255*3, b: 230*3 } } },
-                    { type: 'sphere', center: { x: -4, y: 1, z: -3 }, radius: 0.5, material: { emissive: { r: 50*2, g: 100*2, b: 255*2 } } },
-                    { type: 'sphere', center: { x: 4, y: 1, z: -3 }, radius: 0.5, material: { emissive: { r: 255*2, g: 50*2, b: 50*2 } } }
-                ];
-                const smallBallCount = 200;
-                const glassBallCount = 100;
-                const placementRadius = 6;
-                const positions = [];
-                const materials = [];
-                const glassMaterial = { transparency: 1.0, refractiveIndex: 1.5 };
-                const redMetalMaterial = { color: { r: 230, g: 50, b: 50 }, reflectivity: 1.0, fuzz: 0.1 };
-                for (let i = 0; i < smallBallCount; i++) {
-                    materials.push(i < glassBallCount ? glassMaterial : redMetalMaterial);
+                if (!workerUrl) {
+                    const workerScriptContent = document.getElementById('worker-script').textContent;
+                    const workerBlob = new Blob([workerScriptContent], { type: 'application/javascript' });
+                    workerUrl = URL.createObjectURL(workerBlob);
                 }
-                for (let i = materials.length - 1; i > 0; i--) {
-                    const j = Math.floor(PRNG.random() * (i + 1));
-                    [materials[i], materials[j]] = [materials[j], materials[i]];
-                }
-                while (positions.length < smallBallCount) {
-                    const x = (PRNG.random() * 2 - 1) * placementRadius;
-                    const z = (PRNG.random() * 2 - 1) * placementRadius;
-                    const center = V.create(x, -0.3, z);
-                    if (V.magnitude(V.subtract(center, {x:0,y:-0.3,z:0})) > 1.2) {
-                         positions.push(center);
-                    }
-                }
-                for(let i = 0; i < smallBallCount; i++) {
-                    objects.push({ type: 'sphere', center: positions[i], radius: 0.2, material: materials[i] });
-                }
-                return { camera: setupCamera(RENDER_WIDTH, RENDER_HEIGHT), background: {r: 25, g: 25, b: 35}, objects: objects };
-            }
-            
-            const scene = createScene();
-
-            function drawWorkerIndicator(tile, workerId) {
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-                ctx.fillRect(tile.x, tile.y, tile.size, tile.size);
-                ctx.font = 'bold 24px Arial';
-                ctx.fillStyle = '#555';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(workerId, tile.x + tile.size / 2, tile.y + tile.size / 2);
             }
 
-            startButton.addEventListener('click', () => {
-                const numThreads = navigator.hardwareConcurrency || 4;
-                threadsEl.textContent = numThreads;
-                timeEl.textContent = 'Running...';
-                startButton.disabled = true;
+            async function runBenchmark(numThreads, samplesPerPixel, benchmarkName) {
                 ctx.fillStyle = '#000';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                progressBar.style.display = 'block';
                 progressFill.style.width = '0%';
-
-                const workerScriptContent = document.getElementById('workerScript').textContent;
-                const workerBlob = new Blob([workerScriptContent], { type: 'application/javascript' });
-                const workerUrl = URL.createObjectURL(workerBlob);
-
-                const tiles = [];
-                for (let y = 0; y < RENDER_HEIGHT; y += TILE_SIZE) {
-                    for (let x = 0; x < RENDER_WIDTH; x += TILE_SIZE) {
-                        tiles.push({ x, y, size: TILE_SIZE });
-                    }
-                }
                 
+                const tiles = [];
+                for (let y = 0; y < RENDER_HEIGHT; y += TILE_SIZE) { 
+                    for (let x = 0; x < RENDER_WIDTH; x += TILE_SIZE) { 
+                        tiles.push({ x, y, size: TILE_SIZE }); 
+                    } 
+                }
                 let workQueue = [...tiles];
                 const totalTiles = tiles.length;
                 let completedTiles = 0;
-                let runningWorkers = [];
-                const startTime = performance.now();
+                
+                progressText.textContent = `Initializing ${numThreads} thread(s)...`;
+                const runningWorkers = [];
+                for (let i = 0; i < numThreads; i++) {
+                    const worker = new Worker(workerUrl);
+                    runningWorkers.push({ worker, id: i });
+                }
 
-                function onWorkerMessage(e) {
-                    const { pixelData, tile } = e.data;
-                    const imageData = new ImageData(pixelData, tile.size, tile.size);
-                    ctx.putImageData(imageData, tile.x, tile.y);
-                    
-                    completedTiles++;
-                    progressFill.style.width = `${(completedTiles / totalTiles) * 100}%`;
-                    
-                    if (workQueue.length > 0) {
-                        const nextTile = workQueue.pop();
-                        drawWorkerIndicator(nextTile, this.id); 
-                        this.postMessage({ tile: nextTile, canvasWidth: RENDER_WIDTH, canvasHeight: RENDER_HEIGHT, scene, samplesPerPixel: SAMPLES_PER_PIXEL, maxDepth: MAX_DEPTH });
-                    }
+                let initCount = 0;
+                const jsUrl = self.location.origin + `/raytracer_${benchmarkName}.js`;
+                const wasmBinary = wasmBinaries[benchmarkName];
 
-                    if (completedTiles === totalTiles) {
-                        const endTime = performance.now();
-                        const totalTime = ((endTime - startTime) / 1000);
-                        
-                        timeEl.textContent = `${totalTime.toFixed(3)}s`;
-                        startButton.disabled = false;
-                        
-                        runningWorkers.forEach(w => w.terminate());
-                        runningWorkers = [];
-                        URL.revokeObjectURL(workerUrl);
-                    }
+                for (const workerObj of runningWorkers) {
+                    await new Promise(resolve => {
+                        workerObj.worker.onmessage = e => {
+                            if (e.data && e.data.ready) {
+                                initCount++;
+                                progressText.textContent = `Initializing ${initCount}/${numThreads} thread(s)...`;
+                                resolve();
+                            }
+                        };
+                        workerObj.worker.postMessage({ wasmBinary: wasmBinary.slice(0), jsUrl: jsUrl });
+                    });
                 }
                 
-                for (let i = 0; i < numThreads; i++) {
-                    if (workQueue.length > 0) {
-                        const worker = new Worker(workerUrl);
-                        worker.id = i + 1;
-                        worker.onmessage = onWorkerMessage.bind(worker);
-                        
-                        const initialTile = workQueue.pop();
-                        drawWorkerIndicator(initialTile, worker.id); 
-                        worker.postMessage({ tile: initialTile, canvasWidth: RENDER_WIDTH, canvasHeight: RENDER_HEIGHT, scene, samplesPerPixel: SAMPLES_PER_PIXEL, maxDepth: MAX_DEPTH });
-                        runningWorkers.push(worker);
+                progressText.textContent = `Running... (${numThreads} thread/s, ${samplesPerPixel} spp)`;
+                
+                let startTime;
+                let timerStarted = false;
+
+                return new Promise(resolve => {
+                    function dispatchWork(workerObj) {
+                        if (workQueue.length > 0) {
+                            const tile = workQueue.pop();
+                            ctx.fillStyle = 'black';
+                            ctx.fillRect(tile.x, tile.y, tile.size, tile.size);
+                            ctx.font = 'bold 28px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillStyle = 'rgba(100, 100, 100, 0.9)';
+                            ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
+
+                            const message = { tile, canvasWidth: RENDER_WIDTH, canvasHeight: RENDER_HEIGHT, samplesPerPixel: samplesPerPixel, maxDepth: MAX_DEPTH };
+                            workerObj.worker.postMessage(message);
+                        }
                     }
+
+                    runningWorkers.forEach(workerObj => {
+                        workerObj.worker.onmessage = e => {
+                            const { pixelData, tile } = e.data;
+                            if (!pixelData) return;
+                            
+                            if (!timerStarted) {
+                                startTime = performance.now();
+                                timerStarted = true;
+                            }
+
+                            const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size);
+                            ctx.putImageData(imageData, tile.x, tile.y);
+                            
+                            completedTiles++;
+                            const progressPercentage = (completedTiles / totalTiles) * 100;
+                            progressFill.style.width = `${progressPercentage}%`;
+                            progressText.textContent = `${Math.round(progressPercentage)}%`;
+
+                            if (completedTiles === totalTiles) {
+                                const endTime = performance.now();
+                                const totalTime = (endTime - startTime) / 1000;
+                                runningWorkers.forEach(w => w.worker.terminate());
+                                resolve(totalTime);
+                            } else {
+                                dispatchWork(workerObj);
+                            }
+                        };
+                        dispatchWork(workerObj);
+                    });
+                });
+            }
+
+            async function startBenchmark(numThreads, targetTimeEl) {
+                startSingleButton.disabled = true;
+                startMultiButton.disabled = true;
+                targetTimeEl.textContent = '...';
+
+                const samplesPerPixel = parseInt(benchmarkSelector.value, 10);
+                let benchmarkName = 'medium';
+                if (samplesPerPixel === 64) benchmarkName = 'light';
+                if (samplesPerPixel === 512) benchmarkName = 'heavy';
+                
+                await prepareWasm(benchmarkName);
+                const time = await runBenchmark(numThreads, samplesPerPixel, benchmarkName);
+                targetTimeEl.textContent = `${time.toFixed(3)}s`;
+                progressText.textContent = 'Done!';
+                startSingleButton.disabled = false;
+                startMultiButton.disabled = false;
+            }
+
+            startSingleButton.addEventListener('click', () => {
+                startBenchmark(1, singleThreadTimeEl);
+            });
+
+            startMultiButton.addEventListener('click', () => {
+                let numThreads = parseInt(threadInput.value, 10);
+                if (isNaN(numThreads) || numThreads <= 0) {
+                    numThreads = navigator.hardwareConcurrency || 4;
+                    threadInput.value = numThreads;
                 }
+                startBenchmark(numThreads, multiThreadTimeEl);
             });
         })();
     </script>
