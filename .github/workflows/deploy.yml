@@ -1,0 +1,40 @@
+name: Deploy to GitHub Pages
+
+on:
+  # Run this action whenever you push changes to the main branch
+  push:
+    branches: [ "main" ]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Grant the necessary permissions for the deployment job
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        
+      # This is the magic step that adds the required headers
+      - name: Add COOP/COEP headers
+        run: |
+          echo "Cross-Origin-Opener-Policy: same-origin" >> _headers
+          echo "Cross-Origin-Embedder-Policy: require-corp" >> _headers
+          
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # This should be the folder containing your index.html and other files
+          path: '.' 
+          
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
