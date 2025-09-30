@@ -51,7 +51,7 @@
                 <!-- === NEW SCENE SELECTOR === -->
                 <label for="sceneSelector">Scene:</label>
                 <select id="sceneSelector">
-				     <option value="gauss" selected>Caustic Hell (extremely demanding)</option>
+				     <option value="gauss" selected>Caustic Hell (extremely demanding, needs >256 ray bounces)</option>
 				     <option value="v3">Spheres (enhanced, realistic)</option>
 				    <option value="v2">Spheres (v2, unrealistic)</option>
                     <option value="old">Spheres (v1, old, ugly)</option>
@@ -86,7 +86,7 @@
                 
     
                 <label for="maxDepthInput" style="margin-left: 20px;">Max Ray Bounces:</label>
-                <input type="number" id="maxDepthInput" title="Maximum number of ray bounces." value="25" min="1">
+                <input type="number" id="maxDepthInput" title="Maximum number of ray bounces." value="512" min="1">
             </div>
             <div class="button-group">
                 <button id="startSingleButton" class="benchmark-button start-button">Start Single-Threaded</button>
@@ -282,7 +282,7 @@
                     let samplesPerPixel = parseInt(benchmarkSelector.value === 'custom' ? customSamplesInput.value : benchmarkSelector.value, 10);
                     if (isNaN(samplesPerPixel) || samplesPerPixel <= 0) throw new Error("Please enter a valid number of samples.");
                     const TILE_SIZE = parseInt(tileSizeInput.value, 10) || 64;
-                    const MAX_DEPTH = parseInt(maxDepthInput.value, 10) || 25;
+                    const MAX_DEPTH = parseInt(maxDepthInput.value, 10) || 512;
                     const benchmarkName = sceneSelector.value;
                     const useDenoiser = denoiserToggle.checked;
                     
@@ -314,7 +314,7 @@
                 sceneSelector.value = "gauss";
                 benchmarkSelector.value = "256"; customSamplesInput.value = "128";
                 threadInput.value = navigator.hardwareConcurrency || 4;
-                tileSizeInput.value = "64"; maxDepthInput.value = "25";
+                tileSizeInput.value = "64"; maxDepthInput.value = "512";
                 resolutionInput.value = ""; // Reset resolution input
                 denoiserToggle.checked = false;
                 checkCustomPreset();
