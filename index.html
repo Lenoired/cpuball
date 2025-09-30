@@ -154,7 +154,7 @@
 
             function updateUIForScene() {
                 const selectedScene = sceneSelector.value;
-                const supportsDenoiser = (selectedScene === 'v2' || selectedScene === 'gauss');
+                const supportsDenoiser = (selectedScene === 'v2' || selectedScene === 'gauss' || selectedScene === 'v3');
                 denoiserToggle.disabled = !supportsDenoiser;
                 if (!supportsDenoiser) {
                     denoiserToggle.checked = false;
