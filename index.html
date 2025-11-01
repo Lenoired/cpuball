@@ -48,16 +48,14 @@
         <div id="progressBar"> <div id="progressFill"></div> <div id="progressText"></div> </div>
         <div id="controls">
             <div class="input-group">
-                <!-- === NEW SCENE SELECTOR === -->
                 <label for="sceneSelector">Scene:</label>
                 <select id="sceneSelector">
-				     <option value="gauss" selected>Caustic Hell (extremely demanding, needs >256 ray bounces)</option>
-				     <option value="v3">Spheres (enhanced, realistic)</option>
-				    <option value="v2">Spheres (v2, unrealistic)</option>
-                    <option value="old">Spheres (v1, old, needs <50 ray bounces)</option>
-                 
+				    <option value="gauss" selected>Caustic Hell (extremely demanding, needs >256 ray bounces, WASM)</option>
+				     <option value="v3">Spheres (enhanced, realistic, WASM)</option>
+				    <option value="v2">Spheres (v2, unrealistic, WASM)</option>
+                    <option value="old">Spheres (v1, <50 ray bounces recommended, WASM)</option>
+                    <option value="javascript">Spheres (inefficient, JavaScript)</option>
                 </select>
-
                 <label for="benchmarkSelector" style="margin-left: 20px;">Benchmark Preset:</label>
                 <select id="benchmarkSelector">
                     <option value="16">Ultra Light (16 Samples)</option>
@@ -103,20 +101,10 @@
             <p><strong>Multi-thread time:</strong> <span id="multiThreadTime">-</span></p>
         </div>
         <div id="reset-container"> <button id="resetButton" class="benchmark-button">Reset to default</button> </div>
-        <p id="disclaimer">Please note: Scene initialization may take a few moments, particularly on tests with a high sample count.</p>
+        <br><br><h3>Please note:</h3>
+		<p id="disclaimer">1. Scene initialization may take a few moments, particularly on tests with a high sample count.</p>
+		<p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p>
     </div>
-
-    <script id="worker-script" type="text/worker">
-        var Module = null; var wasmInstance = null; var renderTile = null; var freeFunc = null; function getHeapU8(mod) { if (!mod) { if (typeof HEAPU8 !== 'undefined') return HEAPU8; return null; } if (mod.HEAPU8) return mod.HEAPU8; if (mod.asm && mod.asm.HEAPU8) return mod.asm.HEAPU8; if (typeof HEAPU8 !== 'undefined') return HEAPU8; return null; }
-        function onModuleReady(m) { wasmInstance = m || Module; try { if (typeof wasmInstance.cwrap !== 'function') { if (typeof Module !== 'undefined' && typeof Module.cwrap === 'function') wasmInstance = Module; } } catch (err) { console.error('cwrap lookup error', err); } if (!wasmInstance || typeof wasmInstance.cwrap !== 'function') { self.postMessage({ ready: false, error: 'cwrap not found on module' }); return; }
-        renderTile = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'string', 'number', 'number', 'boolean']);
-        freeFunc = wasmInstance.cwrap('free_memory', null, ['number']); self.postMessage({ ready: true }); }
-        self.onmessage = async function(e) { if (e.data && e.data.wasmBinary) { Module = { wasmBinary: e.data.wasmBinary, onRuntimeInitialized: function() { try { onModuleReady(Module); } catch (err) { console.error('onRuntimeInitialized error', err); } } }; try { importScripts(e.data.jsUrl); } catch (err) { self.postMessage({ ready: false, error: 'importScripts failed for ' + e.data.jsUrl }); return; } try { if (typeof createModule === 'function') { const maybePromise = createModule(Module); if (maybePromise && typeof maybePromise.then === 'function') { maybePromise.then(m => onModuleReady(m)).catch(err => { self.postMessage({ ready: false, error: 'createModule rejected' }); }); } else { onModuleReady(maybePromise || Module); } return; } } catch (err) { console.warn('factory invocation attempt failed', err); } return; } if (!renderTile || !wasmInstance) { return; }
-        const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser } = e.data;
-        if (!tile) return; const sceneArg = ""; let pixelDataPtr = 0; try {
-        pixelDataPtr = renderTile(tile.x, tile.y, tile.size, canvasWidth, canvasHeight, sceneArg, samplesPerPixel, maxDepth, useDenoiser);
-        } catch (err) { console.error('renderTile call failed', err); return; } if (!pixelDataPtr) { console.error('renderTile returned null/0 pointer'); return; } const heap = getHeapU8(wasmInstance); if (!heap || !heap.buffer) { console.error('HEAPU8 not available after render'); return; } const byteLength = tile.size * tile.size * 4; const view = new Uint8ClampedArray(heap.buffer, pixelDataPtr, byteLength); const copied = new Uint8ClampedArray(byteLength); copied.set(view); if (freeFunc) { try { freeFunc(pixelDataPtr); } catch (err) { console.warn('free attempt failed', err); } } try { self.postMessage({ pixelData: copied, tile }, [copied.buffer]); } catch (err) { self.postMessage({ pixelData: copied.slice(), tile }, []); } };
-    </script>
 
     <script>
         (function() {
@@ -137,15 +125,17 @@
             const customSamplesInput = document.getElementById('customSamplesInput');
             const tileSizeInput = document.getElementById('tileSizeInput');
             const maxDepthInput = document.getElementById('maxDepthInput');
-            const resolutionInput = document.getElementById('resolutionInput'); // Get resolution input
+            const resolutionInput = document.getElementById('resolutionInput');
             const sceneSelector = document.getElementById('sceneSelector');
             const denoiserToggle = document.getElementById('denoiser-toggle');
 
-            let wasmBinaries = {}; let workerUrl = null; let activeWorkers = []; let isBenchmarkRunning = false;
-            const fullPath = self.location.href; const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
+            let wasmBinaries = {};
+            let activeWorkers = [];
+            let isBenchmarkRunning = false;
+            const fullPath = self.location.href;
+            const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
             threadInput.value = navigator.hardwareConcurrency || 4;
             
-            // Use variables instead of constants for dynamic resolution
             let renderWidth = canvas.width, renderHeight = canvas.height;
 
             function checkCustomPreset() { if (benchmarkSelector.value === 'custom') { customSamplesGroup.style.display = 'flex'; } else { customSamplesGroup.style.display = 'none'; } }
@@ -154,7 +144,8 @@
 
             function updateUIForScene() {
                 const selectedScene = sceneSelector.value;
-                const supportsDenoiser = (selectedScene === 'v2' || selectedScene === 'gauss' || selectedScene === 'v3');
+                const isWasmScene = selectedScene !== 'javascript';
+                const supportsDenoiser = (selectedScene === "javascript" || selectedScene === 'v2' || selectedScene === 'gauss' || selectedScene === 'v3');
                 denoiserToggle.disabled = !supportsDenoiser;
                 if (!supportsDenoiser) {
                     denoiserToggle.checked = false;
@@ -163,13 +154,12 @@
             sceneSelector.addEventListener('change', updateUIForScene);
             updateUIForScene(); 
 
-            // Function to parse resolution input and update canvas
             function parseAndUpdateResolution() {
                 const defaultWidth = 1600;
                 const defaultHeight = 900;
                 const resValue = resolutionInput.value.trim();
 
-                if (!resValue) { // If empty, use default
+                if (!resValue) {
                     renderWidth = defaultWidth;
                     renderHeight = defaultHeight;
                 } else {
@@ -177,7 +167,7 @@
                     if (parts.length !== 2) {
                         renderWidth = defaultWidth;
                         renderHeight = defaultHeight;
-                        resolutionInput.value = `${defaultWidth}x${defaultHeight}`; // Show user the fallback
+                        resolutionInput.value = `${defaultWidth}x${defaultHeight}`;
                         console.warn("Invalid resolution format. Falling back to 1600x900.");
                     } else {
                         const width = parseInt(parts[0], 10);
@@ -194,22 +184,16 @@
                         }
                     }
                 }
-                // Update canvas element's actual size
                 canvas.width = renderWidth;
                 canvas.height = renderHeight;
             }
 
             async function prepareWasm(benchmarkName) {
-                if (wasmBinaries[benchmarkName]) return;
+                if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
                 try {
                     const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
                     if (!wasmResponse.ok) throw new Error(`Failed to fetch WASM file: ${wasmResponse.statusText}`);
                     wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
-                    if (!workerUrl) {
-                        const workerScriptContent = document.getElementById('worker-script').textContent;
-                        const workerBlob = new Blob([workerScriptContent], { type: 'application/javascript' });
-                        workerUrl = URL.createObjectURL(workerBlob);
-                    }
                 } catch (error) {
                     console.error("WASM Preparation Error:", error);
                     progressText.textContent = `Error: Could not load scene files.`;
@@ -220,7 +204,6 @@
             async function runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser) {
                 ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); progressFill.style.width = '0%';
                 const tiles = [];
-                // Use the updated renderWidth and renderHeight variables
                 for (let y = 0; y < renderHeight; y += TILE_SIZE) { 
                     for (let x = 0; x < renderWidth; x += TILE_SIZE) { 
                         tiles.push({ x, y, size: TILE_SIZE }); 
@@ -230,43 +213,96 @@
                 progressText.textContent = `Creating ${numThreads} thread(s)...`;
                 let startTime; let timerStarted = false; let hasFailed = false;
 
+                const isJsScene = benchmarkName === 'javascript';
+
                 return new Promise((resolve, reject) => {
                     let initializedWorkers = 0;
                     const cleanupAndFail = (errorMessage) => { if (hasFailed) return; hasFailed = true; isBenchmarkRunning = false; console.error(errorMessage); progressText.textContent = `Error: ${errorMessage}`; activeWorkers.forEach(w => { if (w && w.worker) w.worker.terminate(); }); activeWorkers = []; reject(new Error(errorMessage)); };
-                    const onWorkerMessage = (workerObj, e) => {
+                    
+                    function onWorkerMessage(workerObj, e) {
                         if (!isBenchmarkRunning || hasFailed) return;
-                        if (e.data && e.data.error) { cleanupAndFail(`Worker #${workerObj.id} failed: ${e.data.error}`); return; }
-                        if (e.data && e.data.ready && !workerObj.isReady) {
-                            workerObj.isReady = true; initializedWorkers++;
-                            progressText.textContent = `Initializing ${initializedWorkers}/${numThreads} thread(s)...`;
-                            if (initializedWorkers === numThreads) {
-                                progressText.textContent = `Initializing scene... (${numThreads} thread/s, ${samplesPerPixel} spp)`;
-                                activeWorkers.forEach(w => dispatchWork(w));
-                            } else { createNextWorker(); }
-                            return;
-                        }
-                        if (e.data && e.data.pixelData) {
-                            if (!timerStarted) { startTime = performance.now(); timerStarted = true; }
-                            const { pixelData, tile } = e.data; const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); ctx.putImageData(imageData, tile.x, tile.y);
-                            completedTiles++; const progressPercentage = (completedTiles / totalTiles) * 100;
-                            progressFill.style.width = `${progressPercentage}%`; progressText.textContent = `${Math.round(progressPercentage)}%`;
-                            if (completedTiles === totalTiles) {
-                                const totalTime = (performance.now() - startTime) / 1000;
-                                activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
-                                resolve({ time: totalTime });
-                            } else { dispatchWork(workerObj); }
+                        const msg = e.data;
+                        switch (msg.type) {
+                            case 'ready': 
+                                workerObj.isReady = true;
+                                initializedWorkers++;
+                                progressText.textContent = `Initializing ${initializedWorkers}/${numThreads} thread(s)...`;
+                                if (initializedWorkers === numThreads) {
+                                    progressText.textContent = `All threads ready. Starting...`;
+                                    activeWorkers.forEach(w => dispatchWork(w));
+                                }
+                                break;
+                             case 'scene-initialized': 
+                                workerObj.isReady = true;
+                                initializedWorkers++;
+                                progressText.textContent = `Initializing scene in ${initializedWorkers}/${numThreads} thread(s)...`;
+                                if (initializedWorkers === numThreads) {
+                                    progressText.textContent = `All scenes initialized. Starting...`;
+                                    activeWorkers.forEach(w => dispatchWork(w));
+                                }
+                                break;
+                            case 'result':
+                                if (!timerStarted) { startTime = performance.now(); timerStarted = true; }
+                                const { pixelData, tile } = msg; 
+                                const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
+                                ctx.putImageData(imageData, tile.x, tile.y);
+                                
+                                completedTiles++; 
+                                const progressPercentage = (completedTiles / totalTiles) * 100;
+                                progressFill.style.width = `${progressPercentage}%`; 
+                                progressText.textContent = `${Math.round(progressPercentage)}%`;
+                                
+                                if (completedTiles === totalTiles) {
+                                    const totalTime = (performance.now() - startTime) / 1000;
+                                    activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
+                                    resolve({ time: totalTime });
+                                } else { 
+                                    dispatchWork(workerObj); 
+                                }
+                                break;
+                            case 'error':
+                                cleanupAndFail(`Worker #${workerObj.id} failed: ${msg.error}`);
+                                break;
                         }
                     };
-                    function dispatchWork(workerObj) { if (workQueue.length > 0) { const tile = workQueue.pop(); ctx.fillStyle = 'black'; ctx.fillRect(tile.x, tile.y, tile.size, tile.size); ctx.font = 'bold 28px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = 'rgba(100, 100, 100, 0.9)'; ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
-                    // Pass the updated renderWidth and renderHeight to the worker
-                    const message = { tile, canvasWidth: renderWidth, canvasHeight: renderHeight, samplesPerPixel, maxDepth: MAX_DEPTH, useDenoiser };
-                    workerObj.worker.postMessage(message); } }
+
+                    function dispatchWork(workerObj) { 
+                        if (workQueue.length > 0) { 
+                            const tile = workQueue.pop(); 
+                          
+ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; 
+ctx.fillRect(tile.x, tile.y, tile.size, tile.size);
+ctx.font = 'bold 28px Arial';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillStyle = 'white'; 
+ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
+
+                            const message = { type: 'render-tile', tile, canvasWidth: renderWidth, canvasHeight: renderHeight, samplesPerPixel, maxDepth: MAX_DEPTH, useDenoiser };
+                            workerObj.worker.postMessage(message); 
+                        } 
+                    }
                     
-                    const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
-                    const wasmBinary = wasmBinaries[benchmarkName];
-                    let workerCreationIndex = 0;
-                    function createNextWorker() { if (workerCreationIndex >= numThreads || hasFailed) return; const i = workerCreationIndex++; try { const worker = new Worker(workerUrl); const workerObj = { worker, id: i, isReady: false }; worker.onmessage = (e) => onWorkerMessage(workerObj, e); worker.onerror = (e) => cleanupAndFail(`An unexpected error in Worker #${i}: ${e.message}`); activeWorkers.push(workerObj); worker.postMessage({ wasmBinary: wasmBinary.slice(0), jsUrl: jsUrl }); } catch (error) { cleanupAndFail(`Failed to create Worker #${i}. Your browser may have run out of memory.`); } }
-                    createNextWorker();
+                    for (let i = 0; i < numThreads; i++) {
+                        try {
+                            const worker = new Worker('universal-worker.js');
+                            const workerObj = { worker, id: i, isReady: false };
+                            worker.onmessage = (e) => onWorkerMessage(workerObj, e);
+                            worker.onerror = (e) => cleanupAndFail(`An unexpected error in Worker #${i}: ${e.message}`);
+                            activeWorkers.push(workerObj);
+
+                            if (isJsScene) {
+                              
+                                worker.postMessage({ type: 'init-scene', scene: 'cornell' });
+                            } else {
+                                const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
+                                const wasmBinary = wasmBinaries[benchmarkName];
+                                worker.postMessage({ type: 'init-wasm', wasmBinary: wasmBinary.slice(0), jsUrl: jsUrl });
+                            }
+                        } catch (error) {
+                            return cleanupAndFail(`Failed to create Worker #${i}. ${error.message}`);
+                        }
+                    }
                 });
             }
 
@@ -275,7 +311,6 @@
                 startSingleButton.disabled = true; startMultiButton.disabled = true; stopButton.disabled = false;
                 targetTimeEl.textContent = '...'; progressBar.style.display = 'block'; progressText.textContent = '';
                 
-                // Parse and set the resolution right before the benchmark starts
                 parseAndUpdateResolution();
 
                 try {
@@ -291,7 +326,8 @@
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
                     progressText.textContent = 'Done!';
                 } catch (error) {
-                   
+                   console.error("Benchmark failed:", error.message);
+                   progressText.textContent = `Error: ${error.message}`;
                 } finally {
                     if (isBenchmarkRunning) {
                         isBenchmarkRunning = false;
@@ -315,7 +351,7 @@
                 benchmarkSelector.value = "256"; customSamplesInput.value = "128";
                 threadInput.value = navigator.hardwareConcurrency || 4;
                 tileSizeInput.value = "64"; maxDepthInput.value = "512";
-                resolutionInput.value = ""; // Reset resolution input
+                resolutionInput.value = "";
                 denoiserToggle.checked = false;
                 checkCustomPreset();
                 updateUIForScene();
