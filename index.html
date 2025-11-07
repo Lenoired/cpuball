@@ -2,110 +2,323 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Monolith Pathtracer</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #121212; color: #e0e0e0; margin: 0; padding: 1rem; box-sizing: border-box; -webkit-user-select: none; -ms-user-select: none; user-select: none; }
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --primary-text-color: #e0e0e0;
+            --secondary-text-color: #aaa;
+            --input-bg-color: #2a2a2a;
+            --border-color: #333;
+            --accent-color: #d93025;
+            --accent-hover-color: #e84c4c;
+            --button-secondary-bg: #28a745;
+            --button-secondary-hover: #218838;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--primary-text-color);
+            margin: 0;
+            padding: 1rem;
+            box-sizing: border-box;
+            -webkit-user-select: none; -ms-user-select: none; user-select: none;
+        }
+
         input, textarea, select { -webkit-user-select: text; -ms-user-select: text; user-select: text; }
-        #container { text-align: center; background-color: #1e1e1e; padding: 2rem; border-radius: 12px; width: 100%; max-width: 1100px; }
-        h1 { color: #ffffff; margin-top: 0; font-size: 2.5em; }
-        p { max-width: 650px; margin: 0.5rem auto 1rem auto; color: #aaa; }
-        canvas { background-color: #000; border-radius: 8px; margin-top: 1rem; width: 100%; height: auto; border: 1px solid #333; }
-        #controls { margin: 1.5rem 0; }
-        .input-group { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
-        .thread-info-text { color: #888; opacity: 0.7; font-size: 0.9em; font-style: italic; margin-right: 15px; }
-        .input-group label { font-size: 1.1em; }
-        #threadInput, #benchmarkSelector, #customSamplesInput, #tileSizeInput, #maxDepthInput, #sceneSelector, #resolutionInput { padding: 10px; font-size: 1.1em; border-radius: 8px; border: 1px solid #333; background-color: #2a2a2a; color: #e0e0e0; }
-        #threadInput, #customSamplesInput, #tileSizeInput, #maxDepthInput { width: 80px; text-align: center; }
-        #resolutionInput { width: 120px; text-align: center; }
-        #custom-samples-group { display: none; }
-        .button-group { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
-        .benchmark-button { padding: 14px 28px; font-size: 1.1em; font-weight: bold; cursor: pointer; border: none; border-radius: 8px; transition: background-color 0.2s ease; }
+
+        #container {
+            text-align: center;
+            background-color: var(--surface-color);
+            padding: 2rem;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        h1 {
+            color: #ffffff;
+            margin-top: 0;
+            font-size: 2.5em;
+        }
+
+        p {
+            max-width: 650px;
+            margin: 0.5rem auto 1rem auto;
+            color: var(--secondary-text-color);
+        }
+
+        canvas {
+            background-color: #000;
+            border-radius: 8px;
+            margin-top: 1rem;
+            width: 100%;
+            height: auto;
+            border: 1px solid var(--border-color);
+        }
+
+        #controls-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+        }
+
+        .control-fieldset {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            flex: 1;
+            min-width: 300px;
+            max-width: 500px;
+        }
+
+        .control-fieldset legend {
+            padding: 0 0.5em;
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            text-align: left;
+            margin-bottom: 1.2rem;
+			transition: opacity 0.3s ease;
+        }
+        
+        .control-group:last-child { margin-bottom: 0; }
+
+        .control-group label {
+            margin-bottom: 0.5rem;
+            font-size: 1.1em;
+        }
+
+        .control-group input, .control-group select {
+            width: 100%;
+            padding: 10px;
+            font-size: 1.1em;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--input-bg-color);
+            color: var(--primary-text-color);
+            box-sizing: border-box;
+        }
+        
+        .inline-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .inline-group label { margin-bottom: 0; }
+        .inline-group input[type="checkbox"] { width: auto; }
+
+        #custom-samples-group { display: none; margin-top: 10px;}
+        #customSamplesInput { width: 100px; }
+        .thread-info-text { color: #888; font-size: 0.8em; margin-bottom: 4px; }
+
+        .button-group {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .benchmark-button {
+            padding: 14px 28px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            transition: background-color 0.2s ease;
+        }
+
         .benchmark-button:disabled { background-color: #555; cursor: not-allowed; }
-        .start-button { background-color: #d93025; color: white; }
-        .start-button:not(:disabled):hover { background-color: #e84c4c; }
+        .start-button { background-color: var(--accent-color); color: white; }
+        .start-button:not(:disabled):hover { background-color: var(--accent-hover-color); }
         #stopButton { background-color: #6c757d; color: white; }
-        #stopButton:not(:disabled) { background-color: #28a745; }
-        #stopButton:not(:disabled):hover { background-color: #218838; }
-        #results { margin-top: 1rem; background-color: #2a2a2a; padding: 1rem 1.5rem; border-radius: 8px; display: inline-block; min-width: 350px; }
+        #stopButton:not(:disabled) { background-color: var(--button-secondary-bg); }
+        #stopButton:not(:disabled):hover { background-color: var(--button-secondary-hover); }
+
+        #results {
+            margin-top: 2rem;
+            background-color: var(--input-bg-color);
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            display: inline-block;
+            min-width: 350px;
+        }
         #results p { margin: 0.5rem 0; font-size: 1.2em; text-align: left; color: #fff; }
         #results strong { display: inline-block; width: 200px; }
+
         #reset-container { margin-top: 1.5rem; }
         #resetButton { background-color: #007bff; color: white; font-size: 1em; padding: 10px 20px; }
         #resetButton:hover { background-color: #0069d9; }
+
         #progressBar { width: 100%; height: 28px; background-color: #333; border-radius: 14px; margin-top: 1.5rem; overflow: hidden; display: none; position: relative; }
-        #progressFill { width: 0%; height: 100%; background-color: #d93025; transition: width 0.1s linear; }
+        #progressFill { width: 0%; height: 100%; background-color: var(--accent-color); transition: width 0.1s linear; }
         #progressText { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; text-shadow: 1px 1px 2px black; }
-        #disclaimer { margin-top: 1rem; color: #888; opacity: 0.7; font-size: 0.9em; font-style: italic; }
-        .control-item { margin-top: 1rem; }
+        
+        #disclaimer { margin-top: 1rem; color: #888; font-size: 0.9em; font-style: italic; }
+
+        @media (max-width: 768px) {
+            body { padding: 0.5rem; }
+            #container { padding: 1rem; }
+            h1 { font-size: 2em; }
+            .control-fieldset { min-width: 100%; }
+        }
+.master-preset-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 1rem;
+}
+#masterPresetSelector {
+    padding: 10px;
+    font-size: 1.1em;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg-color);
+    color: var(--primary-text-color);
+}
+
+.control-group:has(#noiseThresholdInput:disabled) {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
     </style>
 </head>
 <body>
     <div id="container">
         <h1>Monolith Pathtracer</h1>
         <p>A CPU path tracing utility.</p>
+
         <canvas id="renderCanvas" width="1600" height="900"></canvas>
         <div id="progressBar"> <div id="progressFill"></div> <div id="progressText"></div> </div>
-        <div id="controls">
-            <div class="input-group">
-                <label for="sceneSelector">Scene:</label>
-                <select id="sceneSelector">
-				    <option value="gauss" selected>Caustic Hell (extremely demanding, needs >256 ray bounces, WASM)</option>
-				     <option value="v3">Spheres (enhanced, realistic, WASM)</option>
-				    <option value="v2">Spheres (v2, unrealistic, WASM)</option>
-                    <option value="old">Spheres (v1, <50 ray bounces recommended, WASM)</option>
-                    <option value="javascript">Spheres (inefficient, JavaScript)</option>
-                </select>
-                <label for="benchmarkSelector" style="margin-left: 20px;">Benchmark Preset:</label>
-                <select id="benchmarkSelector">
-                    <option value="16">Ultra Light (16 Samples)</option>
-                    <option value="64">Light (64 Samples)</option>
-                    <option value="256" selected>Medium (256 Samples)</option>
-                    <option value="512">Heavy (512 Samples)</option>
-                    <option value="1024">Extreme (1024 Samples)</option>
-                    <option value="custom">Custom</option>
-                </select>
-                <div id="custom-samples-group" class="input-group" style="margin-bottom: 0;">
-                    <label for="customSamplesInput">Samples:</label>
-                    <input type="number" id="customSamplesInput" value="128" min="1">
+
+   
+
+        <div id="controls-container">
+          
+            <fieldset class="control-fieldset">
+                <legend>Scene & Performance</legend>
+                <div class="control-group">
+                    <label for="sceneSelector">Scene:</label>
+                    <select id="sceneSelector">
+                        <option value="gauss" selected>Caustic Hell (extremely demanding, needs >256 ray bounces, WASM)</option>
+						<option value="simple">Staircase (fastest, more advanced, WASM)</option>
+                        <option value="v3">Spheres v3 (slow, realistic, WASM)</option>
+                        <option value="v2">Spheres v2 (slow, unrealistic, WASM)</option>
+                        <option value="old">Spheres v1 (slowest, <50 ray bounces recommended, WASM)</option>
+                        <option value="javascript">Spheres JS (inefficient, JavaScript)</option>
+                    </select>
                 </div>
-            </div>
-            <div class="input-group">
-                <span class="thread-info-text">Wrong thread count? Change it manually.</span>
-                <label for="threadInput">Threads:</label>
-                <input type="number" id="threadInput" title="Enter the number of threads for the multi-threaded test." min="1">
-            </div>
-             <div class="input-group">
-			       <label for="resolutionInput" style="margin-left: 20px;">Resolution:</label>
-                <input type="text" id="resolutionInput" placeholder="1600x900">
+                <div class="control-group">
+                    <label for="threadInput">Threads:</label>
+                   
+                    <input type="number" id="threadInput" title="Number of threads to run." min="1">
+                </div>
+                <div class="control-group">
+                    <label for="resolutionInput">Resolution:</label>
+                    <input type="text" id="resolutionInput" placeholder="1600x900">
+                </div>
+            </fieldset>
+
+            
+            <fieldset class="control-fieldset">
+                <legend>Render Quality</legend>
+                <div class="control-group">
+                    <label for="benchmarkSelector">Samples Preset:</label>
+                    <select id="benchmarkSelector">
+                        <option value="16">Ultra Light (16 Samples)</option>
+                        <option value="64">Light (64 Samples)</option>
+                        <option value="256" selected>Medium (256 Samples)</option>
+                        <option value="512">Heavy (512 Samples)</option>
+                        <option value="1024">Extreme (1024 Samples)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <div id="custom-samples-group" class="inline-group">
+                        <label for="customSamplesInput">Custom Samples:</label>
+                        <input type="number" id="customSamplesInput" value="256" min="1">
+                    </div>
+                </div>
 				
-                <label for="tileSizeInput">Render Tile Size:</label>
-                <input type="number" id="tileSizeInput" title="Size of the rendering chunks in pixels." value="64" min="16" step="16">
-                
-    
-                <label for="maxDepthInput" style="margin-left: 20px;">Max Ray Bounces:</label>
-                <input type="number" id="maxDepthInput" title="Maximum number of ray bounces." value="512" min="1">
-            </div>
-            <div class="button-group">
-                <button id="startSingleButton" class="benchmark-button start-button">Start Single-Threaded</button>
-                <button id="startMultiButton" class="benchmark-button start-button">Start Multi-Threaded</button>
-                <button id="stopButton" class="benchmark-button" disabled>Stop</button>
-            </div>
-            <div class="control-item">
-              <label for="denoiser-toggle">Denoiser:</label>
-              <input type="checkbox" id="denoiser-toggle">
+                <div class="control-group">
+                    <label for="maxDepthInput">Max Ray Bounces:</label>
+                    <input type="number" id="maxDepthInput" title="Maximum number of ray bounces." value="512" min="1">
+                </div>
+                <div class="control-group">
+                    <label for="tileSizeInput">Render Tile Size (px):</label>
+                    <input type="number" id="tileSizeInput" title="Size of the rendering chunks in pixels." value="64" min="16" step="16">
+                </div>
+				
+<div class="control-group">
+    <label for="noiseThresholdInput">Noise Threshold (higher = faster, <0.0001 = no adaptive sampling & max quality, recommended between 0.04 and 0.12):</label>
+    <input type="number" id="noiseThresholdInput" value="0.11" step="0.01" min="0.000001" title="Lower is cleaner but slower. The sweet spot is often between 0.04 and 0.12.">
+</div>
+                <div class="control-group">
+                    <div class="inline-group">
+                      <input type="checkbox" id="denoiser-toggle">
+                      <label for="denoiser-toggle">Denoiser</label>
+                    </div>
+                    <div class="inline-group">
+                      <input type="checkbox" id="debug-toggle">
+                      <label for="debug-toggle">Variance Mapping (for debugging)</label>
+                    </div>
+					
+                </div>
+            </fieldset>
+			<div class="master-preset-container">
+                <label for="masterPresetSelector"><strong>Benchmark Preset:</strong></label>
+                <select id="masterPresetSelector">
+                    <option value="SmartphoneFriendly">Smartphone Friendly</option>
+                    <option value="LightRendering">Light rendering</option>
+                    <option value="Workstation" selected>Workstation</option>
+                    <option value="Cinematic">Cinematic</option>
+					<option value="Photorealistic">Photorealistic</option>
+					<option value="PIAV">Patience Is A Virtue</option>
+                </select>
             </div>
         </div>
+
+        <div class="button-group">
+            <button id="startSingleButton" class="benchmark-button start-button">Start Single-Threaded</button>
+            <button id="startMultiButton" class="benchmark-button start-button">Start Multi-Threaded</button>
+            <button id="stopButton" class="benchmark-button" disabled>Stop</button>
+        </div>
+        
         <div id="results">
             <p><strong>Single-thread time:</strong> <span id="singleThreadTime">-</span></p>
             <p><strong>Multi-thread time:</strong> <span id="multiThreadTime">-</span></p>
         </div>
-        <div id="reset-container"> <button id="resetButton" class="benchmark-button">Reset to default</button> </div>
+
+        <div id="reset-container">
+            <button id="resetButton" class="benchmark-button">Reset to default</button>
+        </div>
+        
         <br><br><h3>Please note:</h3>
 		<p id="disclaimer">1. Scene initialization may take a few moments, particularly on tests with a high sample count.</p>
 		<p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p>
     </div>
-
     <script>
         (function() {
             const startSingleButton = document.getElementById('startSingleButton');
@@ -128,8 +341,14 @@
             const resolutionInput = document.getElementById('resolutionInput');
             const sceneSelector = document.getElementById('sceneSelector');
             const denoiserToggle = document.getElementById('denoiser-toggle');
+			const debugToggle = document.getElementById('debug-toggle');
+            const scenesSupportingDebug = ['simple'];
+			const masterPresetSelector = document.getElementById('masterPresetSelector');
+			const noiseThresholdInput = document.getElementById('noiseThresholdInput');
+			const scenesSupportingAdaptiveSampling = ['simple'];
 
             let wasmBinaries = {};
+			const legacyScenes = ['gauss', 'v3', 'v2', 'old', 'javascript'];
             let activeWorkers = [];
             let isBenchmarkRunning = false;
             const fullPath = self.location.href;
@@ -142,22 +361,105 @@
             checkCustomPreset();
             benchmarkSelector.addEventListener('change', checkCustomPreset);
 
+            const masterPresets = {
+                'SmartphoneFriendly': {
+                    resolution: '800x800',
+                    samples: 32,
+                    maxDepth: 384,
+                    tileSize: 32,
+					noiseThreshold: 0.21,
+                },
+                'LightRendering': {
+                    resolution: '1280x720',
+                    samples: 64,
+                    maxDepth: 512,
+                    tileSize: 64,
+                    noiseThreshold: 0.18,
+				},
+                'Workstation': {
+                    resolution: '1600x900',
+                    samples: 128,
+                    maxDepth: 512,
+                    tileSize: 64,
+                    noiseThreshold: 0.14,
+				},
+                'Cinematic': {
+                    resolution: '2560x1440',
+                    samples: 512,
+                    maxDepth: 512,
+                    tileSize: 64,
+                    noiseThreshold: 0.10,
+				},
+				 'Photorealistic': {
+                    resolution: '2560x1440',
+                    samples: 1024,
+                    maxDepth: 512,
+                    tileSize: 64,
+                    noiseThreshold: 0.0001,
+				},
+				 'PIAV': {
+                    resolution: '3840x2160',
+                    samples: 2048,
+                    maxDepth: 512,
+                    tileSize: 64,
+                    noiseThreshold: 0.0001,
+				},
+				
+            };
+
+            function applyMasterPreset(presetName) {
+                const preset = masterPresets[presetName];
+                if (!preset) return;
+
+                resolutionInput.value = preset.resolution;
+                maxDepthInput.value = preset.maxDepth;
+                tileSizeInput.value = preset.tileSize;
+				noiseThresholdInput.value = preset.noiseThreshold;
+
+                const sampleValueStr = preset.samples.toString();
+                const isPresetSample = [...benchmarkSelector.options].some(opt => opt.value === sampleValueStr);
+
+                if (isPresetSample) {
+                    benchmarkSelector.value = sampleValueStr;
+                } else {
+                    benchmarkSelector.value = 'custom';
+                    customSamplesInput.value = preset.samples;
+                }
+                
+                checkCustomPreset();
+            }
+
+            masterPresetSelector.addEventListener('change', (e) => {
+                applyMasterPreset(e.target.value);
+            });
             function updateUIForScene() {
                 const selectedScene = sceneSelector.value;
                 const isWasmScene = selectedScene !== 'javascript';
-                const supportsDenoiser = (selectedScene === "javascript" || selectedScene === 'v2' || selectedScene === 'gauss' || selectedScene === 'v3');
+                const supportsDenoiser = (selectedScene === "javascript" || selectedScene === 'v2' || selectedScene === 'gauss' || selectedScene === 'v3' || selectedScene === "simple");
                 denoiserToggle.disabled = !supportsDenoiser;
                 if (!supportsDenoiser) {
                     denoiserToggle.checked = false;
                 }
+    const supportsAdaptive = scenesSupportingAdaptiveSampling.includes(selectedScene);
+    
+
+    noiseThresholdInput.disabled = !supportsAdaptive;
+
+    const supportsDebug = scenesSupportingDebug.includes(selectedScene);
+    debugToggle.disabled = !supportsDebug;
+    if (!supportsDebug) {
+        debugToggle.checked = false;
+    }
             }
             sceneSelector.addEventListener('change', updateUIForScene);
             updateUIForScene(); 
 
             function parseAndUpdateResolution() {
                 const defaultWidth = 1600;
-                const defaultHeight = 900;
-                const resValue = resolutionInput.value.trim();
+    const defaultHeight = 900;
+    const resValue = resolutionInput.value.trim();
+
+    lastResolutionValue = resValue;
 
                 if (!resValue) {
                     renderWidth = defaultWidth;
@@ -189,19 +491,30 @@
             }
 
             async function prepareWasm(benchmarkName) {
-                if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
-                try {
-                    const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
-                    if (!wasmResponse.ok) throw new Error(`Failed to fetch WASM file: ${wasmResponse.statusText}`);
-                    wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
-                } catch (error) {
-                    console.error("WASM Preparation Error:", error);
-                    progressText.textContent = `Error: Could not load scene files.`;
-                    throw error;
-                }
-            }
+    if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
+
+    try {
+        const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
+        if (!wasmResponse.ok) throw new Error(`Failed to fetch WASM file: ${wasmResponse.statusText}`);
+
+        if (legacyScenes.includes(benchmarkName)) {
+       
+            console.log(`Using ArrayBuffer loading for old scene: ${benchmarkName}`);
+            wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
+        } else {
+          
+            console.log(`Using compileStreaming for modern scene: ${benchmarkName}`);
+            wasmBinaries[benchmarkName] = await WebAssembly.compileStreaming(wasmResponse);
+        }
+
+    } catch (error) {
+        console.error("WASM Preparation Error:", error);
+        progressText.textContent = `Error: Could not load scene files.`;
+        throw error;
+    }
+}
             
-            async function runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser) {
+            async function runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser, debugMode, noiseThreshold) {
                 ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); progressFill.style.width = '0%';
                 const tiles = [];
                 for (let y = 0; y < renderHeight; y += TILE_SIZE) { 
@@ -243,9 +556,10 @@
                                 break;
                             case 'result':
                                 if (!timerStarted) { startTime = performance.now(); timerStarted = true; }
-                                const { pixelData, tile } = msg; 
-                                const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
-                                ctx.putImageData(imageData, tile.x, tile.y);
+                                const { pixelData, tile } = msg;
+
+const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
+ctx.putImageData(imageData, tile.x, tile.y);
                                 
                                 completedTiles++; 
                                 const progressPercentage = (completedTiles / totalTiles) * 100;
@@ -278,7 +592,7 @@ ctx.textBaseline = 'middle';
 ctx.fillStyle = 'white'; 
 ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
 
-                            const message = { type: 'render-tile', tile, canvasWidth: renderWidth, canvasHeight: renderHeight, samplesPerPixel, maxDepth: MAX_DEPTH, useDenoiser };
+                            const message = { type: 'render-tile', tile, canvasWidth: renderWidth, canvasHeight: renderHeight, samplesPerPixel, maxDepth: MAX_DEPTH, useDenoiser, debugMode, noiseThreshold};
                             workerObj.worker.postMessage(message); 
                         } 
                     }
@@ -296,8 +610,9 @@ ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
                                 worker.postMessage({ type: 'init-scene', scene: 'cornell' });
                             } else {
                                 const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
-                                const wasmBinary = wasmBinaries[benchmarkName];
-                                worker.postMessage({ type: 'init-wasm', wasmBinary: wasmBinary.slice(0), jsUrl: jsUrl });
+const wasmModule = wasmBinaries[benchmarkName];
+const isLegacy = legacyScenes.includes(benchmarkName);
+worker.postMessage({ type: 'init-wasm', wasmModule: wasmModule, jsUrl: jsUrl, isLegacy: isLegacy });
                             }
                         } catch (error) {
                             return cleanupAndFail(`Failed to create Worker #${i}. ${error.message}`);
@@ -320,9 +635,12 @@ ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
                     const MAX_DEPTH = parseInt(maxDepthInput.value, 10) || 512;
                     const benchmarkName = sceneSelector.value;
                     const useDenoiser = denoiserToggle.checked;
-                    
+                    const debugMode = debugToggle.checked ? 1 : 0;
+				
+        const noiseThreshold = parseFloat(noiseThresholdInput.value) || 0.11;
+		
                     await prepareWasm(benchmarkName);
-                    const result = await runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser);
+                    const result = await runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser, debugMode, noiseThreshold);
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
                     progressText.textContent = 'Done!';
                 } catch (error) {
@@ -353,6 +671,8 @@ ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
                 tileSizeInput.value = "64"; maxDepthInput.value = "512";
                 resolutionInput.value = "";
                 denoiserToggle.checked = false;
+				 debugToggle.checked = false;
+				 noiseThresholdInput.value = "0.11";
                 checkCustomPreset();
                 updateUIForScene();
             });
