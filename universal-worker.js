@@ -1,8 +1,5 @@
-
 let workerRole = 'unknown';
 let js_scene = null;
-
-
 var Module = null;
 var wasmInstance = null;
 var wasm_renderTile = null;
@@ -13,14 +10,27 @@ function onWasmModuleReady(m) {
     wasmInstance = m || Module;
     try { if (typeof wasmInstance.cwrap !== 'function') { if (typeof Module !== 'undefined' && typeof Module.cwrap === 'function') wasmInstance = Module; } } catch (err) { console.error('cwrap lookup error', err); }
     if (!wasmInstance || typeof wasmInstance.cwrap !== 'function') { self.postMessage({ type: 'error', error: 'cwrap not found on module' }); return; }
+    
     wasm_initializeScene = wasmInstance.cwrap('initialize_scene', null, []);
-    wasm_renderTile = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'string', 'number', 'number', 'boolean']);
     wasm_freeFunc = wasmInstance.cwrap('free_memory', null, ['number']);
+
+ 
+    if (isLegacyScene) {
+        
+        console.log('Wrapping legacy render_tile function.');
+        wasm_renderTile_legacy = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'string', 'number', 'number', 'boolean']);
+    } else {
+      
+        console.log('Wrapping modern render_tile function.');
+        wasm_renderTile_modern = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'boolean', 'number', 'number']);
+    }
+    
     self.postMessage({ type: 'ready' });
 }
 function initializeWasm(data) {
+	isLegacyScene = data.isLegacy;
     Module = {
-        wasmBinary: data.wasmBinary,
+        wasmModule: data.wasmModule,
         onRuntimeInitialized: function() { try { onWasmModuleReady(Module); } catch (err) { console.error('onRuntimeInitialized error', err); } }
     };
     try {
@@ -29,6 +39,7 @@ function initializeWasm(data) {
         self.postMessage({ type: 'error', error: 'importScripts failed for ' + data.jsUrl });
         return;
     }
+   
     try {
         if (typeof createModule === 'function') {
             const maybePromise = createModule(Module);
@@ -39,13 +50,25 @@ function initializeWasm(data) {
     } catch (err) { console.warn('factory invocation attempt failed', err); }
 }
 function renderWasmTile(data) {
-    const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, scene } = data;
-    if (!wasm_renderTile || !wasmInstance) { self.postMessage({type: 'error', error: 'WASM renderer not ready'}); return; }
-    const sceneArg = scene;
+    const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, debugMode, noiseThreshold } = data;
     let pixelDataPtr = 0;
+    
     try {
-        pixelDataPtr = wasm_renderTile(tile.x, tile.y, tile.size, canvasWidth, canvasHeight, sceneArg, samplesPerPixel, maxDepth, useDenoiser);
-    } catch (err) { console.error('renderTile call failed', err); return; }
+        if (isLegacyScene) {
+            
+            if (!wasm_renderTile_legacy) { self.postMessage({type: 'error', error: 'Legacy WASM renderer not ready'}); return; }
+        
+            pixelDataPtr = wasm_renderTile_legacy(tile.x, tile.y, tile.size, canvasWidth, canvasHeight, "", samplesPerPixel, maxDepth, useDenoiser);
+        } else {
+          
+            if (!wasm_renderTile_modern) { self.postMessage({type: 'error', error: 'Modern WASM renderer not ready'}); return; }
+            pixelDataPtr = wasm_renderTile_modern(tile.x, tile.y, tile.size, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, debugMode, noiseThreshold);
+        }
+    } catch (err) { 
+        console.error('renderTile call failed', err); 
+        self.postMessage({type: 'error', error: 'WASM render_tile execution failed. ' + err});
+        return; 
+    }
     if (!pixelDataPtr) { console.error('renderTile returned null/0 pointer'); return; }
     const heap = getHeapU8(wasmInstance);
     if (!heap || !heap.buffer) { console.error('HEAPU8 not available after render'); return; }
@@ -56,8 +79,6 @@ function renderWasmTile(data) {
     if (wasm_freeFunc) { try { wasm_freeFunc(pixelDataPtr); } catch (err) { console.warn('free attempt failed', err); } }
     try { self.postMessage({ type: 'result', pixelData: copied, tile }, [copied.buffer]); } catch (err) { self.postMessage({ type: 'result', pixelData: copied.slice(), tile }, []); }
 }
-
-
 const V = {
     create: (x = 0, y = 0, z = 0, out = {}) => { out.x = x; out.y = y; out.z = z; return out; },
     add: (v1, v2, out) => { out.x = v1.x + v2.x; out.y = v1.y + v2.y; out.z = v1.z + v2.z; return out; },
@@ -277,7 +298,7 @@ class Rect extends Hittable {
     }
 }
 class BVHNode extends Hittable {
-    
+   
     constructor(objects, isLeaf = false) {
         super();
         this.left = null;
@@ -285,7 +306,6 @@ class BVHNode extends Hittable {
         this.box = new AABB();
         this.nodeObjects = [];
         this.isLeafNode = isLeaf;
-
         if (isLeaf) {
             this.nodeObjects = objects;
             if (objects.length > 0) {
@@ -298,48 +318,40 @@ class BVHNode extends Hittable {
             }
             return;
         }
-
         if (objects.length <= 4) {
             this.isLeafNode = true;
             this.nodeObjects = objects;
-         
+        
             const leafNode = new BVHNode(objects, true);
             this.box = leafNode.box;
             return;
         }
-
         const tempBoxForSortA = new AABB();
         const tempBoxForSortB = new AABB();
-
-       
+      
         let initialBox = objects[0].boundingBox(new AABB());
         for(let i = 1; i < objects.length; i++) {
             surroundingBox(initialBox, objects[i].boundingBox(tempBoxForSortA), initialBox);
         }
         this.box = initialBox;
-
         const parentSA = surfaceArea(this.box);
         let minCost = Infinity;
         let bestAxis = -1;
         let bestSplit = 0;
-
         for (let axis = 0; axis < 3; axis++) {
             const key = ['x', 'y', 'z'][axis];
             objects.sort((a, b) => {
                 return a.boundingBox(tempBoxForSortA).min[key] - b.boundingBox(tempBoxForSortB).min[key];
             });
-
             for (let i = 1; i < objects.length; i++) {
                 let leftBox = objects[0].boundingBox(new AABB());
                 for(let j = 1; j < i; j++) {
                     surroundingBox(leftBox, objects[j].boundingBox(tempBoxForSortA), leftBox);
                 }
-
                 let rightBox = objects[i].boundingBox(new AABB());
                 for(let j = i + 1; j < objects.length; j++) {
                      surroundingBox(rightBox, objects[j].boundingBox(tempBoxForSortA), rightBox);
                 }
-
                 const cost = 0.125 + (i * surfaceArea(leftBox) + (objects.length - i) * surfaceArea(rightBox)) / parentSA;
                 if (cost < minCost) {
                     minCost = cost;
@@ -348,7 +360,6 @@ class BVHNode extends Hittable {
                 }
             }
         }
-
         if (bestAxis !== -1 && minCost < objects.length) {
              const key = ['x', 'y', 'z'][bestAxis];
              objects.sort((a, b) => {
@@ -364,7 +375,6 @@ class BVHNode extends Hittable {
             this.box = leafNode.box;
         }
     }
-
     intersect(ray, tMin, tMax, rec) {
         if (!this.box.intersect(ray, tMin, tMax)) return false;
         const nodeStack = [];
@@ -391,8 +401,7 @@ class BVHNode extends Hittable {
         }
         return hit;
     }
-
-   
+  
     boundingBox(out = new AABB()) {
         out.min.x = this.box.min.x; out.min.y = this.box.min.y; out.min.z = this.box.min.z;
         out.max.x = this.box.max.x; out.max.y = this.box.max.y; out.max.z = this.box.max.z;
@@ -426,7 +435,7 @@ const traceScratch = {
     rOutPerp: V.create(), rOutParallel: V.create(),
     toLight: V.create(), pointOnLight: V.create(), brdf: C.create(), contrib: C.create(),
     shadowRec: new HitRecord(),
-    lightBox: new AABB() 
+    lightBox: new AABB()
 };
 function js_trace(ray, scene, maxDepth, gbuffer) {
     const s = traceScratch;
@@ -434,7 +443,6 @@ function js_trace(ray, scene, maxDepth, gbuffer) {
     const attenuation = C.create(1,1,1);
     let isSpecularBounce = true;
     const currentRay = { origin: V.create(ray.origin.x, ray.origin.y, ray.origin.z), direction: V.create(ray.direction.x, ray.direction.y, ray.direction.z) };
-
     for (let depth = 0; depth < maxDepth; ++depth) {
         globalHitRec.reset();
         if (!scene.bvhRoot.intersect(currentRay, 0.001, Infinity, globalHitRec)) {
@@ -604,7 +612,6 @@ function generateDemandingScene() {
     const matMetal = new Material(C.create(0.86, 0.86, 0.86), C.create(0, 0, 0), 1.0, 0.05);
     const matGold = new Material(C.create(0.86, 0.7, 0.2), C.create(0, 0, 0), 1.0, 0.15);
     const matFloor = new Material(C.create(0.78, 0.78, 0.78), C.create(0, 0, 0), 0.2, 0.3);
-
     const roomDim = 30.0;
     objects.push(new Rect(V.create(-roomDim, -roomDim, roomDim), V.create(roomDim, -roomDim, roomDim), V.create(roomDim, -roomDim, -roomDim), V.create(-roomDim, -roomDim, -roomDim), V.create(0, 1, 0), matFloor));
     objects.push(new Rect(V.create(-roomDim, roomDim, roomDim), V.create(roomDim, roomDim, roomDim), V.create(roomDim, roomDim, -roomDim), V.create(-roomDim, roomDim, -roomDim), V.create(0, -1, 0), matWhite));
@@ -612,26 +619,24 @@ function generateDemandingScene() {
     objects.push(new Rect(V.create(-roomDim, -roomDim, -roomDim), V.create(-roomDim, -roomDim, roomDim), V.create(-roomDim, roomDim, roomDim), V.create(-roomDim, roomDim, -roomDim), V.create(1, 0, 0), matRed));
     objects.push(new Rect(V.create(roomDim, -roomDim, -roomDim), V.create(roomDim, -roomDim, roomDim), V.create(roomDim, roomDim, roomDim), V.create(roomDim, roomDim, -roomDim), V.create(-1, 0, 0), matGreen));
     objects.push(new Rect(V.create(-roomDim, -roomDim, -roomDim), V.create(roomDim, -roomDim, -roomDim), V.create(roomDim, roomDim, -roomDim), V.create(-roomDim, roomDim, -roomDim), V.create(0, 0, 1), matWhite));
-
     const lightSize = 8.0;
     const lightObj = new Rect(V.create(-lightSize, roomDim - 0.1, -lightSize), V.create(lightSize, roomDim - 0.1, -lightSize), V.create(lightSize, roomDim - 0.1, lightSize), V.create(-lightSize, roomDim - 0.1, lightSize), V.create(0, -1, 0), matLight);
     objects.push(lightObj);
     scene.lights.push(lightObj);
-
     const spheres = [
-       
+      
         { c: [0, -2, -5], r: 2.5, m: matGlass }, { c: [-8, 8, 2], r: 1.8, m: matGlass }, { c: [7, -5, 6], r: 1.2, m: matGlass },
         { c: [10, 2, -10], r: 2.0, m: matGlass }, { c: [-11, -10, 4], r: 1.5, m: matGlass }, { c: [2, 9, 8], r: 1.0, m: matGlass },
         { c: [-5, 5, 5], r: 1.3, m: matGlass }, { c: [0, 10, 0], r: 2.8, m: matGlass }, { c: [12, -12, -8], r: 1.6, m: matGlass },
         { c: [-9, 1, 10], r: 1.1, m: matGlass }, { c: [4, -9, -4], r: 1.9, m: matGlass }, { c: [-2, -10, 7], r: 1.4, m: matGlass },
         { c: [8, 1, -1], r: 0.8, m: matGlass }, { c: [-1, 3, 3], r: 1.0, m: matGlass }, { c: [6, 6, -6], r: 1.7, m: matGlass },
-        
+       
         { c: [5, 0, 0], r: 2.0, m: matGold }, { c: [-10, -9, -3], r: 1.5, m: matGold }, { c: [8, -8, 8], r: 1.0, m: matGold },
         { c: [-3, 7, -9], r: 2.2, m: matGold }, { c: [11, 11, 2], r: 1.3, m: matGold }, { c: [-7, 0, 7], r: 1.8, m: matGold },
         { c: [3, -6, 10], r: 1.1, m: matGold }, { c: [-9, 6, -1], r: 1.6, m: matGold }, { c: [1, 1, 11], r: 1.4, m: matGold },
         { c: [9, -3, -7], r: 2.1, m: matGold }, { c: [-6, -6, -6], r: 1.2, m: matGold }, { c: [2, 2, 2], r: 0.9, m: matGold },
         { c: [10, 5, 5], r: 1.5, m: matGold }, { c: [-4, -4, 12], r: 1.7, m: matGold }, { c: [7, 9, -2], r: 1.0, m: matGold },
-       
+      
         { c: [-5, -8, 8], r: 2.2, m: matMetal }, { c: [9, 9, 9], r: 1.0, m: matMetal }, { c: [-2, 4, -8], r: 1.8, m: matMetal },
         { c: [6, -10, 1], r: 1.3, m: matMetal }, { c: [-12, 3, 3], r: 2.0, m: matMetal }, { c: [1, 7, -4], r: 1.5, m: matMetal },
         { c: [9, -9, 0], r: 1.1, m: matMetal }, { c: [-7, -2, -10], r: 1.9, m: matMetal }, { c: [5, 12, 4], r: 1.2, m: matMetal },
@@ -639,20 +644,18 @@ function generateDemandingScene() {
         { c: [-6, 11, -5], r: 1.4, m: matMetal }, { c: [11, -1, 6], r: 1.8, m: matMetal }, { c: [-3, -7, -1], r: 2.0, m: matMetal }
     ];
     spheres.forEach(s => objects.push(new Sphere(V.create(s.c[0], s.c[1], s.c[2]), s.r, s.m)));
-
     scene.bvhRoot = new BVHNode(objects);
     return scene;
 }
 function renderJsTile(data) {
     const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser } = data;
-    const scene = js_scene; 
+    const scene = js_scene;
     if (!scene) { self.postMessage({ type: 'error', error: 'JS Scene not initialized before render call.'}); return; }
     const pixelData = new Uint8ClampedArray(tile.size * tile.size * 4);
     const lookfrom=scene.camOrigin,lookat=V.create(0,0,0),vup=V.create(0,1,0),vfov=100,aspectRatio=canvasWidth/canvasHeight,aperture=.05,focusDist=V.length(V.subtract(lookfrom,lookat,V.create())),theta=vfov*Math.PI/180,h=Math.tan(theta/2),viewportHeight=2*h,viewportWidth=aspectRatio*viewportHeight,w=V.create();V.normalize(V.subtract(lookfrom,lookat,V.create()),w);const u=V.create();V.normalize(V.cross(vup,w,V.create()),u);const v=V.create();V.cross(w,u,v);const horizontal=V.create();V.scale(u,viewportWidth*focusDist,horizontal);const vertical=V.create();V.scale(v,viewportHeight*focusDist,vertical);const lowerLeftCorner=V.create(),s=traceScratch;V.scale(horizontal,.5,s.tempV1);V.scale(vertical,.5,s.tempV2);V.add(s.tempV1,s.tempV2,s.tempV3);V.scale(w,focusDist,s.tempV4);V.add(s.tempV3,s.tempV4,s.tempV3);V.subtract(lookfrom,s.tempV3,lowerLeftCorner);const lensRadius=aperture/2;
     const colorBuffer = new Float32Array(tile.size * tile.size * 3);
     const gbufferBuffer = useDenoiser ? new Float32Array(tile.size * tile.size * 6) : null;
     const rd=V.create(),offset=V.create(),rayOrigin=V.create(),pointOnViewport=V.create(),rayDir=V.create(),totalColor=C.create(),totalAlbedo=C.create(),totalNormal=V.create(),ray={origin:rayOrigin,direction:rayDir};
-
     for (let yOffset = 0; yOffset < tile.size; yOffset++) {
         const y = tile.y + yOffset;
         for (let xOffset = 0; xOffset < tile.size; xOffset++) {
@@ -690,7 +693,12 @@ self.onmessage = function(e) {
     switch (data.type) {
         case 'init-wasm':
             workerRole = 'wasm';
-            initializeWasm(data);
+            initializeWasm({
+                wasmModule: data.wasmModule,
+                wasmBinary: data.wasmBinary,
+                jsUrl: data.jsUrl,
+                isLegacy: data.isLegacy
+            });
             break;
         case 'init-scene':
             if (workerRole === 'wasm') {
@@ -704,8 +712,8 @@ self.onmessage = function(e) {
             }
             break;
         case 'render-tile':
-            if (workerRole === 'javascript') { renderJsTile(data); } 
-            else if (workerRole === 'wasm') { renderWasmTile(data); } 
+            if (workerRole === 'javascript') { renderJsTile(data); }
+            else if (workerRole === 'wasm') { renderWasmTile(data); }
             else { self.postMessage({ type: 'error', error: 'Worker role not initialized.' }); }
             break;
     }
