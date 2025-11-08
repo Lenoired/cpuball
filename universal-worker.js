@@ -712,13 +712,13 @@ self.onmessage = function(e) {
             }
             break;
         case 'render-batch':
-    // 1. Create arrays to hold the results and their transferable buffers.
+  
     const results = [];
     const transferables = [];
 
-    // 2. Loop through each tile in the 'tiles' array from the message.
+ 
     for (const tile of data.tiles) {
-        // 3. Create a data object for the individual render functions.
+        
         const tileData = { ...data, tile };
         let result;
 
@@ -728,18 +728,19 @@ self.onmessage = function(e) {
             result = renderWasmTile(tileData);
         }
 
-        // 4. If a result was generated, store it and its buffer.
+     
         if (result) {
             results.push(result);
             transferables.push(result.pixelData.buffer);
         }
     }
 
-    // 5. After the loop, send the entire array of results back in a single message.
+  
     if (results.length > 0) {
         self.postMessage({ type: 'result', results: results }, transferables);
     }
     break;
     }
 };
+
 
