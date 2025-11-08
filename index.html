@@ -344,10 +344,10 @@
             const sceneSelector = document.getElementById('sceneSelector');
             const denoiserToggle = document.getElementById('denoiser-toggle');
 			const debugToggle = document.getElementById('debug-toggle');
-            const scenesSupportingDebug = ['simple'];
+            const scenesSupportingDebug = ['simple','gaussv2'];
 			const masterPresetSelector = document.getElementById('masterPresetSelector');
 			const noiseThresholdInput = document.getElementById('noiseThresholdInput');
-			const scenesSupportingAdaptiveSampling = ['simple'];
+			const scenesSupportingAdaptiveSampling = ['simple','gaussv2'];
 
             let wasmBinaries = {};
 			const legacyScenes = ['gauss', 'v3', 'v2', 'old', 'javascript'];
@@ -356,7 +356,7 @@
             const fullPath = self.location.href;
             const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
             threadInput.value = navigator.hardwareConcurrency || 4;
-             // --- MISSING PIECES FOR UI THROTTLING (NOW INCLUDED) ---
+      
             let pendingFrame = false;
             let lastCompletedTiles = 0;
             let renderWidth = canvas.width, renderHeight = canvas.height;
@@ -364,7 +364,7 @@ function updateProgressUI(totalTiles, completedTiles) {
                 const progressPercentage = (completedTiles / totalTiles) * 100;
                 progressFill.style.width = `${progressPercentage}%`;
                 progressText.textContent = `${Math.round(progressPercentage)}%`;
-                pendingFrame = false; // Reset the flag to allow the next update
+                pendingFrame = false;
             }
             function checkCustomPreset() { if (benchmarkSelector.value === 'custom') { customSamplesGroup.style.display = 'flex'; } else { customSamplesGroup.style.display = 'none'; } }
             checkCustomPreset();
@@ -533,10 +533,10 @@ function updateProgressUI(totalTiles, completedTiles) {
                 }
                 let workQueue = [...tiles];
 				const totalTiles = tiles.length;
-				// --- DYNAMIC BATCH SIZE CALCULATION ---
+				
 batchSize = Math.ceil(totalTiles / numThreads);
 console.log(`Static Partitioning Enabled: ${totalTiles} tiles, ${numThreads} threads. Assigning one batch of up to ${batchSize} tiles per worker.`);
-// --- END OF CALCULATION ---
+
 				let completedTiles = 0;
                 progressText.textContent = `Creating ${numThreads} thread(s)...`;
                 let startTime; let timerStarted = false; let hasFailed = false;
@@ -577,16 +577,16 @@ console.log(`Static Partitioning Enabled: ${totalTiles} tiles, ${numThreads} thr
                                     activeWorkers.forEach(w => dispatchWork(w));
                                 }
                                 break;
-                            // INSIDE the onWorkerMessage function from your FIRST code block
+                           
 
 case 'result':
-    // The timer logic we fixed before should be placed at the 'ready' and 'scene-initialized' cases, not here.
+  
     
-    // 1. The message now contains an array called 'results'. Loop through it.
+   
     for (const result of msg.results) {
         const { pixelData, tile } = result;
 
-        // Use the more performant graphics pipeline
+    
         const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size);
         createImageBitmap(imageData).then(imageBitmap => {
             ctx.drawImage(imageBitmap, tile.x, tile.y);
@@ -595,17 +595,17 @@ case 'result':
         completedTiles++;
     }
 
-    // 2. Throttle the progress bar update to happen only once per frame.
+  
     lastCompletedTiles = completedTiles; 
     if (!pendingFrame) { 
         pendingFrame = true;
-        // CORRECTED: Pass 'completedTiles' to the function
+       
         requestAnimationFrame(() => updateProgressUI(totalTiles, completedTiles)); 
     }
 
-    // 3. Check for completion and dispatch the next batch.
+
     if (completedTiles === totalTiles) {
-        // This is where you calculate the final time
+      
         const totalTime = (performance.now() - startTime) / 1000;
         activeWorkers.forEach(w => w.worker.terminate());
         activeWorkers = [];
@@ -621,17 +621,17 @@ case 'result':
                     };
 
                     function dispatchWork(workerObj) {
-    // 1. Create an empty batch array.
+  
     const batch = [];
 
-    // 2. Fill the batch with tiles from the queue, up to BATCH_SIZE.
+
     for (let i = 0; i < batchSize && workQueue.length > 0; i++) {
         batch.push(workQueue.pop());
     }
 
-    // 3. If the batch has tiles, send it to the worker.
+   
     if (batch.length > 0) {
-        // We can still provide visual feedback, just for the first tile in the batch.
+        
         const firstTile = batch[0];
         ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         ctx.fillRect(firstTile.x, firstTile.y, firstTile.size, firstTile.size);
@@ -641,8 +641,6 @@ case 'result':
         ctx.fillStyle = 'white';
         ctx.fillText(workerObj.id, firstTile.x + firstTile.size / 2, firstTile.y + firstTile.size / 2);
 
-        // 4. Construct the message with a new type 'render-batch' and the array of tiles.
-        // We also need to re-read settings here to pass them along.
         const message = {
             type: 'render-batch',
             tiles: batch,
