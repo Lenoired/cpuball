@@ -224,7 +224,8 @@
                 <div class="control-group">
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
-                        <option value="gauss" selected>Caustic Hell (extremely demanding, needs >256 ray bounces, WASM)</option>
+					 <option value="gaussv2" selected>Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option>
+                        <option value="gauss">Caustic Hell (old, slow, needs >256 ray bounces, WASM)</option>
 						<option value="simple">Staircase (fastest, more advanced, WASM)</option>
                         <option value="v3">Spheres v3 (slow, realistic, WASM)</option>
                         <option value="v2">Spheres v2 (slow, unrealistic, WASM)</option>
@@ -321,6 +322,7 @@
     </div>
     <script>
         (function() {
+		let batchSize;
             const startSingleButton = document.getElementById('startSingleButton');
             const startMultiButton = document.getElementById('startMultiButton');
             const stopButton = document.getElementById('stopButton');
@@ -354,9 +356,16 @@
             const fullPath = self.location.href;
             const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
             threadInput.value = navigator.hardwareConcurrency || 4;
-            
+             // --- MISSING PIECES FOR UI THROTTLING (NOW INCLUDED) ---
+            let pendingFrame = false;
+            let lastCompletedTiles = 0;
             let renderWidth = canvas.width, renderHeight = canvas.height;
-
+function updateProgressUI(totalTiles, completedTiles) {
+                const progressPercentage = (completedTiles / totalTiles) * 100;
+                progressFill.style.width = `${progressPercentage}%`;
+                progressText.textContent = `${Math.round(progressPercentage)}%`;
+                pendingFrame = false; // Reset the flag to allow the next update
+            }
             function checkCustomPreset() { if (benchmarkSelector.value === 'custom') { customSamplesGroup.style.display = 'flex'; } else { customSamplesGroup.style.display = 'none'; } }
             checkCustomPreset();
             benchmarkSelector.addEventListener('change', checkCustomPreset);
@@ -522,7 +531,13 @@
                         tiles.push({ x, y, size: TILE_SIZE }); 
                     } 
                 }
-                let workQueue = [...tiles]; const totalTiles = tiles.length; let completedTiles = 0;
+                let workQueue = [...tiles];
+				const totalTiles = tiles.length;
+				// --- DYNAMIC BATCH SIZE CALCULATION ---
+batchSize = Math.ceil(totalTiles / numThreads);
+console.log(`Static Partitioning Enabled: ${totalTiles} tiles, ${numThreads} threads. Assigning one batch of up to ${batchSize} tiles per worker.`);
+// --- END OF CALCULATION ---
+				let completedTiles = 0;
                 progressText.textContent = `Creating ${numThreads} thread(s)...`;
                 let startTime; let timerStarted = false; let hasFailed = false;
 
@@ -542,6 +557,10 @@
                                 progressText.textContent = `Initializing ${initializedWorkers}/${numThreads} thread(s)...`;
                                 if (initializedWorkers === numThreads) {
                                     progressText.textContent = `All threads ready. Starting...`;
+									if (!timerStarted) {
+                    startTime = performance.now();
+                    timerStarted = true;
+                }
                                     activeWorkers.forEach(w => dispatchWork(w));
                                 }
                                 break;
@@ -551,51 +570,93 @@
                                 progressText.textContent = `Initializing scene in ${initializedWorkers}/${numThreads} thread(s)...`;
                                 if (initializedWorkers === numThreads) {
                                     progressText.textContent = `All scenes initialized. Starting...`;
+									 if (!timerStarted) {
+            startTime = performance.now();
+            timerStarted = true;
+        }
                                     activeWorkers.forEach(w => dispatchWork(w));
                                 }
                                 break;
-                            case 'result':
-                                if (!timerStarted) { startTime = performance.now(); timerStarted = true; }
-                                const { pixelData, tile } = msg;
+                            // INSIDE the onWorkerMessage function from your FIRST code block
 
-const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
-ctx.putImageData(imageData, tile.x, tile.y);
-                                
-                                completedTiles++; 
-                                const progressPercentage = (completedTiles / totalTiles) * 100;
-                                progressFill.style.width = `${progressPercentage}%`; 
-                                progressText.textContent = `${Math.round(progressPercentage)}%`;
-                                
-                                if (completedTiles === totalTiles) {
-                                    const totalTime = (performance.now() - startTime) / 1000;
-                                    activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
-                                    resolve({ time: totalTime });
-                                } else { 
-                                    dispatchWork(workerObj); 
-                                }
-                                break;
+case 'result':
+    // The timer logic we fixed before should be placed at the 'ready' and 'scene-initialized' cases, not here.
+    
+    // 1. The message now contains an array called 'results'. Loop through it.
+    for (const result of msg.results) {
+        const { pixelData, tile } = result;
+
+        // Use the more performant graphics pipeline
+        const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size);
+        createImageBitmap(imageData).then(imageBitmap => {
+            ctx.drawImage(imageBitmap, tile.x, tile.y);
+        });
+
+        completedTiles++;
+    }
+
+    // 2. Throttle the progress bar update to happen only once per frame.
+    lastCompletedTiles = completedTiles; 
+    if (!pendingFrame) { 
+        pendingFrame = true;
+        // CORRECTED: Pass 'completedTiles' to the function
+        requestAnimationFrame(() => updateProgressUI(totalTiles, completedTiles)); 
+    }
+
+    // 3. Check for completion and dispatch the next batch.
+    if (completedTiles === totalTiles) {
+        // This is where you calculate the final time
+        const totalTime = (performance.now() - startTime) / 1000;
+        activeWorkers.forEach(w => w.worker.terminate());
+        activeWorkers = [];
+        resolve({ time: totalTime });
+    } else {
+        dispatchWork(workerObj);
+    }
+    break;
                             case 'error':
                                 cleanupAndFail(`Worker #${workerObj.id} failed: ${msg.error}`);
                                 break;
                         }
                     };
 
-                    function dispatchWork(workerObj) { 
-                        if (workQueue.length > 0) { 
-                            const tile = workQueue.pop(); 
-                          
-ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; 
-ctx.fillRect(tile.x, tile.y, tile.size, tile.size);
-ctx.font = 'bold 28px Arial';
-ctx.textAlign = 'center';
-ctx.textBaseline = 'middle';
-ctx.fillStyle = 'white'; 
-ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
+                    function dispatchWork(workerObj) {
+    // 1. Create an empty batch array.
+    const batch = [];
 
-                            const message = { type: 'render-tile', tile, canvasWidth: renderWidth, canvasHeight: renderHeight, samplesPerPixel, maxDepth: MAX_DEPTH, useDenoiser, debugMode, noiseThreshold};
-                            workerObj.worker.postMessage(message); 
-                        } 
-                    }
+    // 2. Fill the batch with tiles from the queue, up to BATCH_SIZE.
+    for (let i = 0; i < batchSize && workQueue.length > 0; i++) {
+        batch.push(workQueue.pop());
+    }
+
+    // 3. If the batch has tiles, send it to the worker.
+    if (batch.length > 0) {
+        // We can still provide visual feedback, just for the first tile in the batch.
+        const firstTile = batch[0];
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(firstTile.x, firstTile.y, firstTile.size, firstTile.size);
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'white';
+        ctx.fillText(workerObj.id, firstTile.x + firstTile.size / 2, firstTile.y + firstTile.size / 2);
+
+        // 4. Construct the message with a new type 'render-batch' and the array of tiles.
+        // We also need to re-read settings here to pass them along.
+        const message = {
+            type: 'render-batch',
+            tiles: batch,
+            canvasWidth: renderWidth,
+            canvasHeight: renderHeight,
+            samplesPerPixel: parseInt(benchmarkSelector.value === 'custom' ? customSamplesInput.value : benchmarkSelector.value, 10),
+            maxDepth: parseInt(maxDepthInput.value, 10) || 512,
+            useDenoiser: denoiserToggle.checked,
+            debugMode: debugToggle.checked ? 1 : 0,
+            noiseThreshold: parseFloat(noiseThresholdInput.value) || 0.11
+        };
+        workerObj.worker.postMessage(message);
+    }
+}
                     
                     for (let i = 0; i < numThreads; i++) {
                         try {
