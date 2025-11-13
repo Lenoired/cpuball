@@ -77,7 +77,7 @@ function renderWasmTile(data) {
     const copied = new Uint8ClampedArray(byteLength);
     copied.set(view);
     if (wasm_freeFunc) { try { wasm_freeFunc(pixelDataPtr); } catch (err) { console.warn('free attempt failed', err); } }
-    return { pixelData: copied, tile };
+    try { self.postMessage({ type: 'result', pixelData: copied, tile }, [copied.buffer]); } catch (err) { self.postMessage({ type: 'result', pixelData: copied.slice(), tile }, []); }
 }
 const V = {
     create: (x = 0, y = 0, z = 0, out = {}) => { out.x = x; out.y = y; out.z = z; return out; },
@@ -686,7 +686,7 @@ function renderJsTile(data) {
         const pIdx=i*4;
         pixelData[pIdx]=Math.max(0,Math.min(255,r*255));pixelData[pIdx+1]=Math.max(0,Math.min(255,g*255));pixelData[pIdx+2]=Math.max(0,Math.min(255,b*255));pixelData[pIdx+3]=255;
     }
-    return { pixelData, tile };
+    self.postMessage({ type: 'result', pixelData, tile }, [pixelData.buffer]);
 }
 self.onmessage = function(e) {
     const data = e.data;
@@ -711,36 +711,11 @@ self.onmessage = function(e) {
                 self.postMessage({ type: 'scene-initialized' });
             }
             break;
-        case 'render-batch':
-  
-    const results = [];
-    const transferables = [];
-
- 
-    for (const tile of data.tiles) {
-        
-        const tileData = { ...data, tile };
-        let result;
-
-        if (workerRole === 'javascript') {
-            result = renderJsTile(tileData);
-        } else if (workerRole === 'wasm') {
-            result = renderWasmTile(tileData);
-        }
-
-     
-        if (result) {
-            results.push(result);
-            transferables.push(result.pixelData.buffer);
-        }
-    }
-
-  
-    if (results.length > 0) {
-        self.postMessage({ type: 'result', results: results }, transferables);
-    }
+        case 'render-tile':
+    if (workerRole === 'javascript') { renderJsTile(data); }
+    else if (workerRole === 'wasm') { renderWasmTile(data); }
+    else { self.postMessage({ type: 'error', error: 'Worker role not initialized.' }); }
     break;
     }
 };
-
 
