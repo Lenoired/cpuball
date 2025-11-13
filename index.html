@@ -322,7 +322,7 @@
     </div>
     <script>
         (function() {
-		let batchSize;
+		
             const startSingleButton = document.getElementById('startSingleButton');
             const startMultiButton = document.getElementById('startMultiButton');
             const stopButton = document.getElementById('stopButton');
@@ -356,16 +356,9 @@
             const fullPath = self.location.href;
             const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
             threadInput.value = navigator.hardwareConcurrency || 4;
-      
-            let pendingFrame = false;
-            let lastCompletedTiles = 0;
+       
             let renderWidth = canvas.width, renderHeight = canvas.height;
-function updateProgressUI(totalTiles, completedTiles) {
-                const progressPercentage = (completedTiles / totalTiles) * 100;
-                progressFill.style.width = `${progressPercentage}%`;
-                progressText.textContent = `${Math.round(progressPercentage)}%`;
-                pendingFrame = false;
-            }
+
             function checkCustomPreset() { if (benchmarkSelector.value === 'custom') { customSamplesGroup.style.display = 'flex'; } else { customSamplesGroup.style.display = 'none'; } }
             checkCustomPreset();
             benchmarkSelector.addEventListener('change', checkCustomPreset);
@@ -531,13 +524,7 @@ function updateProgressUI(totalTiles, completedTiles) {
                         tiles.push({ x, y, size: TILE_SIZE }); 
                     } 
                 }
-                let workQueue = [...tiles];
-				const totalTiles = tiles.length;
-				
-batchSize = Math.ceil(totalTiles / numThreads);
-console.log(`Static Partitioning Enabled: ${totalTiles} tiles, ${numThreads} threads. Assigning one batch of up to ${batchSize} tiles per worker.`);
-
-				let completedTiles = 0;
+                let workQueue = [...tiles]; const totalTiles = tiles.length; let completedTiles = 0;
                 progressText.textContent = `Creating ${numThreads} thread(s)...`;
                 let startTime; let timerStarted = false; let hasFailed = false;
 
@@ -570,48 +557,36 @@ console.log(`Static Partitioning Enabled: ${totalTiles} tiles, ${numThreads} thr
                                 progressText.textContent = `Initializing scene in ${initializedWorkers}/${numThreads} thread(s)...`;
                                 if (initializedWorkers === numThreads) {
                                     progressText.textContent = `All scenes initialized. Starting...`;
-									 if (!timerStarted) {
+									 
+        if (!timerStarted) {
             startTime = performance.now();
             timerStarted = true;
         }
                                     activeWorkers.forEach(w => dispatchWork(w));
                                 }
                                 break;
-                           
+                            
 
 case 'result':
-  
-    
+    const { pixelData, tile } = msg;
+
    
-    for (const result of msg.results) {
-        const { pixelData, tile } = result;
-
+    const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
+    createImageBitmap(imageData).then(imageBitmap => {
+        ctx.drawImage(imageBitmap, tile.x, tile.y);
+    });
     
-        const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size);
-        createImageBitmap(imageData).then(imageBitmap => {
-            ctx.drawImage(imageBitmap, tile.x, tile.y);
-        });
-
-        completedTiles++;
-    }
-
-  
-    lastCompletedTiles = completedTiles; 
-    if (!pendingFrame) { 
-        pendingFrame = true;
-       
-        requestAnimationFrame(() => updateProgressUI(totalTiles, completedTiles)); 
-    }
-
-
+    completedTiles++; 
+    const progressPercentage = (completedTiles / totalTiles) * 100;
+    progressFill.style.width = `${progressPercentage}%`; 
+    progressText.textContent = `${Math.round(progressPercentage)}%`;
+    
     if (completedTiles === totalTiles) {
-      
         const totalTime = (performance.now() - startTime) / 1000;
-        activeWorkers.forEach(w => w.worker.terminate());
-        activeWorkers = [];
+        activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
         resolve({ time: totalTime });
-    } else {
-        dispatchWork(workerObj);
+    } else { 
+        dispatchWork(workerObj); 
     }
     break;
                             case 'error':
@@ -620,40 +595,31 @@ case 'result':
                         }
                     };
 
-                    function dispatchWork(workerObj) {
-  
-    const batch = [];
-
-
-    for (let i = 0; i < batchSize && workQueue.length > 0; i++) {
-        batch.push(workQueue.pop());
-    }
-
-   
-    if (batch.length > 0) {
-        
-        const firstTile = batch[0];
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(firstTile.x, firstTile.y, firstTile.size, firstTile.size);
+                    function dispatchWork(workerObj) { 
+    if (workQueue.length > 0) { 
+        const tile = workQueue.pop(); 
+      
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; 
+        ctx.fillRect(tile.x, tile.y, tile.size, tile.size);
         ctx.font = 'bold 28px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'white';
-        ctx.fillText(workerObj.id, firstTile.x + firstTile.size / 2, firstTile.y + firstTile.size / 2);
+        ctx.fillStyle = 'white'; 
+        ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
 
-        const message = {
-            type: 'render-batch',
-            tiles: batch,
-            canvasWidth: renderWidth,
-            canvasHeight: renderHeight,
-            samplesPerPixel: parseInt(benchmarkSelector.value === 'custom' ? customSamplesInput.value : benchmarkSelector.value, 10),
-            maxDepth: parseInt(maxDepthInput.value, 10) || 512,
-            useDenoiser: denoiserToggle.checked,
-            debugMode: debugToggle.checked ? 1 : 0,
+        const message = { 
+            type: 'render-tile', 
+            tile, 
+            canvasWidth: renderWidth, 
+            canvasHeight: renderHeight, 
+            samplesPerPixel: parseInt(benchmarkSelector.value === 'custom' ? customSamplesInput.value : benchmarkSelector.value, 10), 
+            maxDepth: parseInt(maxDepthInput.value, 10) || 512, 
+            useDenoiser: denoiserToggle.checked, 
+            debugMode: debugToggle.checked ? 1 : 0, 
             noiseThreshold: parseFloat(noiseThresholdInput.value) || 0.11
         };
-        workerObj.worker.postMessage(message);
-    }
+        workerObj.worker.postMessage(message); 
+    } 
 }
                     
                     for (let i = 0; i < numThreads; i++) {
