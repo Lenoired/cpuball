@@ -51,7 +51,8 @@ function initializeWasm(data) {
     } catch (err) { console.warn('factory invocation attempt failed', err); }
 }
 function renderWasmTile(data) {
-    const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, debugMode, noiseThreshold } = data;
+    // ADD challengeSeed HERE vvv
+const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, debugMode, noiseThreshold, challengeSeed } = data;
     let pixelDataPtr = 0;
     
     try {
@@ -63,7 +64,19 @@ function renderWasmTile(data) {
         } else {
           
             if (!wasm_renderTile_modern) { self.postMessage({type: 'error', error: 'Modern WASM renderer not ready'}); return; }
-            pixelDataPtr = wasm_renderTile_modern(tile.x, tile.y, tile.size, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, debugMode, noiseThreshold);
+            pixelDataPtr = wasm_renderTile_modern(
+    tile.x, 
+    tile.y, 
+    tile.size, 
+    canvasWidth, 
+    canvasHeight, 
+    samplesPerPixel, 
+    maxDepth, 
+    useDenoiser, 
+    debugMode, 
+    noiseThreshold,
+    challengeSeed // <--- ADD THIS
+);
         }
     } catch (err) { 
         console.error('renderTile call failed', err); 
