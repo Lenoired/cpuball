@@ -35,7 +35,18 @@
             box-sizing: border-box;
             -webkit-user-select: none; -ms-user-select: none; user-select: none;
         }
-
+.notice-banner {
+            background-color: #ff9800; /* Orange for visibility */
+            color: #121212; /* Dark text for contrast */
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-weight: bold;
+            font-size: 1.1em;
+            border: 1px solid #e68900;
+            text-transform: uppercase;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
         input, textarea, select { -webkit-user-select: text; -ms-user-select: text; user-select: text; }
 
         #container {
@@ -211,6 +222,7 @@
 </head>
 <body>
     <div id="container">
+		 <div class="notice-banner">⚠️ For the moment, only Staircase scene is available ⚠️</div>
         <h1>Monolith Pathtracer</h1>
         <p>A CPU path tracing utility.</p>
 
@@ -225,9 +237,9 @@
                 <div class="control-group">
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
-                        <option value="gaussv2" selected>Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option>
+                        <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option>
                         <option value="gauss">Caustic Hell (old, slow, needs >256 ray bounces, WASM)</option>
-                        <option value="simple">Staircase (fastest, more advanced, WASM)</option>
+                        <option value="simple" selected>Staircase (fastest, more advanced, WASM)</option>
                         <option value="v3">Spheres v3 (slow, realistic, WASM)</option>
                         <option value="v2">Spheres v2 (slow, unrealistic, WASM)</option>
                         <option value="old">Spheres v1 (slowest, <50 ray bounces recommended, WASM)</option>
@@ -374,20 +386,38 @@
                 return Promise.resolve(sha256(pixelData));
             }
 
+            // HELPER: Wait for user to solve CAPTCHA
+            // Returns a promise that resolves when a token is available
+            async function getFreshTurnstileToken(msgElement) {
+                let token = turnstile.getResponse();
+                if (token) return token;
+
+                // If no token, we must wait for user
+                msgElement.textContent = "Please solve the CAPTCHA to proceed...";
+                msgElement.style.color = "#ff9800";
+                
+                return new Promise((resolve) => {
+                    const checkInterval = setInterval(() => {
+                        token = turnstile.getResponse();
+                        if (token) {
+                            clearInterval(checkInterval);
+                            resolve(token);
+                        }
+                    }, 500);
+                });
+            }
+
             async function prepareWasm(benchmarkName) {
                 if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
                 try {
                     const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
                     if (!wasmResponse.ok) throw new Error(`Failed to fetch WASM file: ${wasmResponse.statusText}`);
                     if (legacyScenes.includes(benchmarkName)) {
-                        console.log(`Using ArrayBuffer loading for old scene: ${benchmarkName}`);
                         wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
                     } else {
-                        console.log(`Using compileStreaming for modern scene: ${benchmarkName}`);
                         wasmBinaries[benchmarkName] = await WebAssembly.compileStreaming(wasmResponse);
                     }
                 } catch (error) {
-                    console.error("WASM Preparation Error:", error);
                     progressText.textContent = `Error: Could not load scene files.`;
                     throw error;
                 }
@@ -525,6 +555,14 @@
                     return;
                 }
 
+                // 1. CAPTCHA FOR START
+                let startToken = turnstile.getResponse();
+                if (!startToken) {
+                    statusDiv.textContent = "Please solve the CAPTCHA to start.";
+                    statusDiv.style.color = "#d93025"; 
+                    return;
+                }
+
                 isBenchmarkRunning = true;
                 document.getElementById('startMultiButton').disabled = true;
                 document.getElementById('usernameInput').disabled = true;
@@ -532,42 +570,52 @@
                 
                 statusDiv.textContent = "Initializing...";
                 statusDiv.style.color = "#fff";
-                progressText.textContent = "Contacting Server...";
 
-                 try {
-                    // 1. GET TURNSTILE TOKEN
-                    const turnstileToken = turnstile.getResponse();
-                    if (!turnstileToken) {
-                         statusDiv.textContent = "Please complete the CAPTCHA check.";
-                         statusDiv.style.color = "#d93025";
-                         isBenchmarkRunning = false; // Reset flag
-                         document.getElementById('startMultiButton').disabled = false; // Unlock button
-                         document.getElementById('usernameInput').disabled = false;
-                         document.getElementById('sceneSelector').disabled = false;
-                         return;
-                    }
-
+                try {
                     const scene = sceneSelector.value;
-                    
-                    // 2. SEND TOKEN IN HEADER (Or Query Param)
-                    // We will send it as a custom header 'X-Turnstile-Token'
                     const res = await fetch(`${backendUrl}/api/start?scene=${scene}`, {
-                        headers: {
-                            'X-Turnstile-Token': turnstileToken
-                        }
+                        headers: { 'X-Turnstile-Token': startToken }
                     });
                     
+                    const data = await res.json();
+                    
+                     // --- RATE LIMIT HANDLING ---
+                    if (res.status === 429) {
+                        turnstile.reset();
+                        
+                        // VISUAL FEEDBACK ON BUTTON
+                        const btn = document.getElementById('startMultiButton');
+                        const oldText = btn.textContent;
+                        btn.textContent = "Cooldown...";
+                        btn.disabled = true;
+                        setTimeout(() => { 
+                            btn.textContent = oldText; 
+                            if (!isBenchmarkRunning) btn.disabled = false;
+                        }, 3000);
+
+                        // CRITICAL FIX: Pass the server message ("Please wait 15s...") 
+                        // directly to the error, so the catch block displays it.
+                        throw new Error("🛑 " + data.message); 
+                    }
+                    // -------------------------------
+
                     if (!res.ok) {
-                         const json = await res.json().catch(() => ({}));
-                         throw new Error(json.error || "Server connection failed");
+                        if (data.error === "CAPTCHA_FAILED" || data.error === "CAPTCHA_MISSING") {
+                            turnstile.reset();
+                            throw new Error("CAPTCHA Invalid. Please solve it again.");
+                        }
+                        if (data.error === "NO_SEEDS_AVAILABLE") {
+                            throw new Error("System is busy, please try again.");
+                        }
+                        throw new Error(data.error || "Server connection failed");
                     }
 
-                    const data = await res.json();
+                    // Reset CAPTCHA immediately after successful start (Token consumed)
+                    turnstile.reset();
+
                     const currentToken = data.token;
                     const seedForWorkers = seedStringToInt(data.seed); 
                     
-                    console.log("Benchmark Started. Seed:", data.seed);
-
                     await prepareWasm(scene);
                     
                     const result = await runBenchmark(
@@ -583,7 +631,11 @@
                     );
 
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
-                    progressText.textContent = 'Done! Uploading...';
+                    progressText.textContent = 'Render Done. Uploading...';
+                    
+                    // --- REMOVED 2ND CAPTCHA LOGIC ---
+                    // No waiting for getFreshTurnstileToken(statusDiv);
+                    
                     statusDiv.textContent = "Validating & Uploading...";
                     statusDiv.style.color = "#ff9800"; 
 
@@ -592,28 +644,42 @@
                     const hash = await cryptoHash(imgData.data);
                     
                     const payload = {
-    token: currentToken,
-    clientHash: hash,
-    username: username,
-    scene: scene,
-    threads: parseInt(threadInput.value, 10) || 1 // <--- MUST BE HERE
-};
+                        token: currentToken,
+                        clientHash: hash,
+                        username: username,
+                        threads: parseInt(threadInput.value, 10) || 1
+                    };
 
+                    // Send immediately without X-Turnstile-Token header
                     const subRes = await fetch(`${backendUrl}/api/submit`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json'
+                            // REMOVED: 'X-Turnstile-Token': submitToken
+                        },
                         body: JSON.stringify(payload)
                     });
 
                     const subJson = await subRes.json();
-
+ // FIX FOR SUBMIT RATE LIMIT
+                    if (subRes.status === 429) {
+                         statusDiv.textContent = "🛑 " + subJson.message; // "Please wait 5s..."
+                         statusDiv.style.color = "#d93025";
+                         return; // Don't throw here, just stop updating UI
+                    }
                     if (subRes.ok) {
                         statusDiv.textContent = `Success! Official Score: ${(subJson.server_score / 1000).toFixed(3)}s`;
                         statusDiv.style.color = "#28a745"; 
                         targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s (Server)`;
                         fetchLeaderboard();
                     } else {
-                        statusDiv.textContent = "Rejected: " + (subJson.verbose || subJson.error);
+                        // If submit captcha failed (rare, but possible)
+                        if (subJson.error === "CAPTCHA_FAILED") {
+                            turnstile.reset();
+                            statusDiv.textContent = "Submit CAPTCHA failed. Please try running again.";
+                        } else {
+                            statusDiv.textContent = "Rejected: " + (subJson.verbose || subJson.error);
+                        }
                         statusDiv.style.color = "#d93025"; 
                     }
 
@@ -623,6 +689,7 @@
                    statusDiv.textContent = error.message;
                    statusDiv.style.color = "#d93025";
                 } finally {
+                    turnstile.reset(); // Always reset at end
                     if (isBenchmarkRunning) {
                         isBenchmarkRunning = false;
                         document.getElementById('startMultiButton').disabled = false;
@@ -632,7 +699,7 @@
                 }
             }
 
-            // LOOP MODE
+            // LOOP MODE (Local Only - No Submit Token needed)
             document.getElementById('startLoopButton').addEventListener('click', async () => {
                 const iterations = parseInt(document.getElementById('loopIterations').value) || 1;
                 let loopResults = [];
@@ -640,12 +707,8 @@
                 loopOutput.value = "Starting loop...";
                 
                 if (!currentRenderSettings) {
-                    loopOutput.value = "Fetching scene settings first...";
                     await fetchSceneSettings();
-                    if (!currentRenderSettings) {
-                        loopOutput.value = "Error: Could not fetch settings. Cannot loop.";
-                        return;
-                    }
+                    if (!currentRenderSettings) return;
                 }
                 isBenchmarkRunning = true;
                 try {
@@ -679,7 +742,6 @@
                     document.getElementById('uploadToDbButton').style.display = 'inline-block';
                     progressText.textContent = "Loop Complete.";
                 } catch(e) {
-                    console.error(e);
                     loopOutput.value += "\nError: " + e.message;
                 } finally {
                     isBenchmarkRunning = false;
@@ -687,7 +749,7 @@
             });
 
             async function fetchSceneSettings() {
-			    fetchLeaderboard();
+			fetchLeaderboard();
                 const scene = sceneSelector.value;
                 const display = document.getElementById('settingsDisplay');
                 display.textContent = "Fetching settings from server...";
@@ -702,7 +764,6 @@
                     document.getElementById('startMultiButton').disabled = false;
                 } catch (e) {
                     display.textContent = "Error loading settings. Check connection.";
-                    console.error(e);
                 }
             }
 
@@ -714,9 +775,15 @@
                 const loopResults = JSON.parse(loopOutput.value || "[]");
                 if(loopResults.length === 0) return;
                 
-                // Prompt for admin password
                 const secret = prompt("Enter Admin Secret:");
                 if(!secret) return;
+
+                // ADMIN CAPTCHA
+                turnstile.reset();
+                const statusDiv = document.getElementById('submissionStatus');
+                statusDiv.textContent = "Please solve CAPTCHA to upload DB.";
+                
+                const token = await getFreshTurnstileToken(statusDiv);
 
                 loopOutput.value = "Uploading...";
                 try {
@@ -724,12 +791,20 @@
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
-                            'X-Admin-Secret': secret // Send the secret header
+                            'X-Admin-Secret': secret,
+                            'X-Turnstile-Token': token
                         },
                         body: JSON.stringify(loopResults)
                     });
                     const json = await res.json();
-                    loopOutput.value = "Upload Result:\n" + JSON.stringify(json, null, 2);
+                    
+                    if (!res.ok && json.error === "CAPTCHA_FAILED") {
+                         turnstile.reset();
+                         loopOutput.value = "Upload failed: CAPTCHA Invalid.";
+                    } else {
+                         loopOutput.value = "Upload Result:\n" + JSON.stringify(json, null, 2);
+                         turnstile.reset();
+                    }
                 } catch(e) {
                     loopOutput.value = "Error:\n" + e.message;
                 }
@@ -752,26 +827,16 @@
                     data.forEach((row, index) => {
                         const tr = document.createElement('tr');
                         tr.style.borderBottom = "1px solid #444";
-                        
                         const rankTd = document.createElement('td'); rankTd.style.padding = "8px"; rankTd.style.textAlign = "center"; rankTd.textContent = index + 1;
                         const userTd = document.createElement('td'); userTd.style.padding = "8px"; userTd.style.textAlign = "center"; userTd.style.fontWeight = "bold"; userTd.style.color = "#fff"; userTd.textContent = row.username; 
                         
-                        // --- START NEW THREADS CELL ---
                         const threadTd = document.createElement('td'); 
-                        threadTd.style.padding = "8px"; 
-                        threadTd.style.textAlign = "center"; 
-                        threadTd.style.color = "#aaa"; 
-                        threadTd.textContent = row.threads || "-"; // Fallback if old data is null
-                        // --- END NEW THREADS CELL ---
+                        threadTd.style.padding = "8px"; threadTd.style.textAlign = "center"; threadTd.style.color = "#aaa"; 
+                        threadTd.textContent = row.threads || "-"; 
 
                         const timeTd = document.createElement('td'); timeTd.style.padding = "8px"; timeTd.style.textAlign = "center"; timeTd.style.color = "#28a745"; timeTd.textContent = (row.score_ms / 1000).toFixed(3) + "s";
                         const dateTd = document.createElement('td'); dateTd.style.padding = "8px"; dateTd.style.textAlign = "center"; dateTd.style.color = "#aaa"; dateTd.style.fontSize = "0.8em"; dateTd.textContent = new Date(row.timestamp).toLocaleDateString();
-                        
-                        tr.appendChild(rankTd); 
-                        tr.appendChild(userTd); 
-                        tr.appendChild(threadTd); // <--- Append it here
-                        tr.appendChild(timeTd); 
-                        tr.appendChild(dateTd);
+                        tr.appendChild(rankTd); tr.appendChild(userTd); tr.appendChild(threadTd); tr.appendChild(timeTd); tr.appendChild(dateTd);
                         tbody.appendChild(tr);
                     });
                 } catch (e) {
