@@ -6,6 +6,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <title>Monolith Pathtracer</title>
     <style>
         :root {
@@ -206,6 +207,7 @@
 }
 
     </style>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.11.1/sha256.min.js"></script>
 </head>
 <body>
     <div id="container">
@@ -218,15 +220,14 @@
    
 
         <div id="controls-container">
-          
             <fieldset class="control-fieldset">
                 <legend>Scene & Performance</legend>
                 <div class="control-group">
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
-					 <option value="gaussv2" selected>Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option>
+                        <option value="gaussv2" selected>Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option>
                         <option value="gauss">Caustic Hell (old, slow, needs >256 ray bounces, WASM)</option>
-						<option value="simple">Staircase (fastest, more advanced, WASM)</option>
+                        <option value="simple">Staircase (fastest, more advanced, WASM)</option>
                         <option value="v3">Spheres v3 (slow, realistic, WASM)</option>
                         <option value="v2">Spheres v2 (slow, unrealistic, WASM)</option>
                         <option value="old">Spheres v1 (slowest, <50 ray bounces recommended, WASM)</option>
@@ -235,85 +236,81 @@
                 </div>
                 <div class="control-group">
                     <label for="threadInput">Threads:</label>
-                   
                     <input type="number" id="threadInput" title="Number of threads to run." min="1">
                 </div>
-                <div class="control-group">
-                    <label for="resolutionInput">Resolution:</label>
-                    <input type="text" id="resolutionInput" placeholder="1600x900">
+               
+                <!-- START DEBUG SECTION -->
+                <div id="debug-section" class="control-group" style="display: none; border: 1px solid #d93025; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                    <label style="color: #d93025; font-weight: bold;">DEBUG: Challenge Seed</label>
+                    <input type="text" id="seedInput" value="0" title="Seed for deterministic noise">
                 </div>
-            </fieldset>
+                <!-- TEST ENVIRONMENT SECTION -->
+                <div id="test-env-section" class="control-group" style="display: none; border: 1px solid #d93025; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                    <legend style="color: #d93025; font-weight: bold;">DEBUG: Data Generator</legend>
+                    <div class="inline-group">
+                        <label>Iterations:</label>
+                        <input type="number" id="loopIterations" value="5" style="width: 60px;">
+                        <button id="startLoopButton" class="benchmark-button" style="padding: 5px 10px; font-size: 0.9em;">Start Loop</button>
+                    </div>
+                    <div class="inline-group" style="margin-top:5px">
+                         <button id="uploadToDbButton" class="benchmark-button" style="background-color: #ff9800; padding: 5px 10px; font-size: 0.9em; display:none;">Upload JSON to DB</button>
+                    </div>
+                    <textarea id="loopOutput" rows="5" style="width:100%; margin-top:10px; font-family: monospace; font-size: 0.8em; color: black;"></textarea>
+                </div>
+                
+                <script>
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.get('debug') === 'true') { document.getElementById('debug-section').style.display = 'block'; }
+                    if (urlParams.get('test') === 'true') { document.getElementById('test-env-section').style.display = 'block'; }
+                </script>
 
-            
-            <fieldset class="control-fieldset">
-                <legend>Render Quality</legend>
-                <div class="control-group">
-                    <label for="benchmarkSelector">Samples Preset:</label>
-                    <select id="benchmarkSelector">
-                        <option value="16">Ultra Light (16 Samples)</option>
-                        <option value="64">Light (64 Samples)</option>
-                        <option value="256" selected>Medium (256 Samples)</option>
-                        <option value="512">Heavy (512 Samples)</option>
-                        <option value="1024">Extreme (1024 Samples)</option>
-                        <option value="custom">Custom</option>
-                    </select>
-                    <div id="custom-samples-group" class="inline-group">
-                        <label for="customSamplesInput">Custom Samples:</label>
-                        <input type="number" id="customSamplesInput" value="256" min="1">
+                <!-- USER CONFIG SECTION -->
+                <div style="flex: 1; min-width: 300px; max-width: 500px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #2a2a2a; border-radius: 12px; padding: 20px; border: 1px solid #444; margin-top: 1.2rem;">
+                    <h3 style="margin-top: 0; color: #fff;">User Configuration</h3>
+                    
+                    <label for="usernameInput" style="margin-bottom: 8px; color: #ccc;">Username (Required):</label>
+                    <input type="text" id="usernameInput" placeholder="Enter name (max 20 chars)" maxlength="20" style="text-align: center; font-weight: bold; width: 80%; margin-bottom: 15px;">
+                     <!-- TURNSTILE WIDGET -->
+        <div style="margin-top: 10px; display: flex; justify-content: center;">
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAACI12ODIopZw2_DX" data-theme="dark"></div>
+        </div>
+                    <div id="settingsDisplay" style="font-size: 0.8em; color: #888; margin-bottom: 15px; font-family: monospace;">
+                        Loading settings...
                     </div>
+
+                    <!-- Status Message Area -->
+                    <div id="submissionStatus" style="font-weight:bold; min-height: 24px; text-align: center; margin-bottom: 10px;"></div>
                 </div>
-				
-                <div class="control-group">
-                    <label for="maxDepthInput">Max Ray Bounces:</label>
-                    <input type="number" id="maxDepthInput" title="Maximum number of ray bounces." value="512" min="1">
-                </div>
-                <div class="control-group">
-                    <label for="tileSizeInput">Render Tile Size (px):</label>
-                    <input type="number" id="tileSizeInput" title="Size of the rendering chunks in pixels." value="64" min="16" step="16">
-                </div>
-				
-<div class="control-group">
-    <label for="noiseThresholdInput">Noise Threshold (higher = faster, <0.0001 = no adaptive sampling & max quality, recommended between 0.04 and 0.12):</label>
-    <input type="number" id="noiseThresholdInput" value="0.11" step="0.01" min="0.000001" title="Lower is cleaner but slower. The sweet spot is often between 0.04 and 0.12.">
-</div>
-                <div class="control-group">
-                    <div class="inline-group">
-                      <input type="checkbox" id="denoiser-toggle">
-                      <label for="denoiser-toggle">Denoiser</label>
-                    </div>
-                    <div class="inline-group">
-                      <input type="checkbox" id="debug-toggle">
-                      <label for="debug-toggle">Variance Mapping (for debugging)</label>
-                    </div>
-					
-                </div>
+                <!-- END USER CONFIG SECTION -->
             </fieldset>
-			<div class="master-preset-container">
-                <label for="masterPresetSelector"><strong>Benchmark Preset:</strong></label>
-                <select id="masterPresetSelector">
-                    <option value="SmartphoneFriendly">Smartphone Friendly</option>
-                    <option value="LightRendering">Light rendering</option>
-                    <option value="Workstation" selected>Workstation</option>
-                    <option value="Cinematic">Cinematic</option>
-					<option value="Photorealistic">Photorealistic</option>
-					<option value="PIAV">Patience Is A Virtue</option>
-                </select>
-            </div>
         </div>
 
         <div class="button-group">
-            <button id="startSingleButton" class="benchmark-button start-button">Start Single-Threaded</button>
             <button id="startMultiButton" class="benchmark-button start-button">Start Multi-Threaded</button>
-            <button id="stopButton" class="benchmark-button" disabled>Stop</button>
         </div>
         
         <div id="results">
-            <p><strong>Single-thread time:</strong> <span id="singleThreadTime">-</span></p>
             <p><strong>Multi-thread time:</strong> <span id="multiThreadTime">-</span></p>
         </div>
 
-        <div id="reset-container">
-            <button id="resetButton" class="benchmark-button">Reset to default</button>
+        <div id="leaderboard-section" style="margin-top: 2rem; width:100%; text-align: center;">
+            <h3>Leaderboard (<span id="leaderboardSceneName">gaussv2</span>)</h3>
+            <button id="refreshLeaderboard" class="benchmark-button" style="padding: 5px 15px; font-size: 0.8em; margin-bottom:10px;">Refresh</button>
+            
+            <table style="width:100%; border-collapse: collapse; color: #eee; margin: 0 auto;">
+                <thead>
+                    <tr style="background:#333; text-align:center;">
+                        <th style="padding:8px; width: 10%;">Rank</th>
+                        <th style="padding:8px; width: 30%;">User</th> <!-- Reduced User width slightly -->
+                        <th style="padding:8px; width: 15%;">Threads</th> <!-- NEW COLUMN -->
+                        <th style="padding:8px; width: 25%;">Time</th>
+                        <th style="padding:8px; width: 20%;">Date</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <tr><td colspan="4" style="text-align:center; padding:10px;">Loading...</td></tr>
+                </tbody>
+            </table>
         </div>
         
         <br><br><h3>Please note:</h3>
@@ -322,13 +319,9 @@
     </div>
     <script>
         (function() {
-		
-            const startSingleButton = document.getElementById('startSingleButton');
+            let currentRenderSettings = null; 
             const startMultiButton = document.getElementById('startMultiButton');
-            const stopButton = document.getElementById('stopButton');
-            const resetButton = document.getElementById('resetButton');
             const threadInput = document.getElementById('threadInput');
-            const benchmarkSelector = document.getElementById('benchmarkSelector');
             const canvas = document.getElementById('renderCanvas');
             const ctx = canvas.getContext('2d');
             const singleThreadTimeEl = document.getElementById('singleThreadTime');
@@ -336,187 +329,71 @@
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
             const progressText = document.getElementById('progressText');
-            const customSamplesGroup = document.getElementById('custom-samples-group');
-            const customSamplesInput = document.getElementById('customSamplesInput');
-            const tileSizeInput = document.getElementById('tileSizeInput');
-            const maxDepthInput = document.getElementById('maxDepthInput');
-            const resolutionInput = document.getElementById('resolutionInput');
             const sceneSelector = document.getElementById('sceneSelector');
-            const denoiserToggle = document.getElementById('denoiser-toggle');
-			const debugToggle = document.getElementById('debug-toggle');
-            const scenesSupportingDebug = ['simple','gaussv2'];
-			const masterPresetSelector = document.getElementById('masterPresetSelector');
-			const noiseThresholdInput = document.getElementById('noiseThresholdInput');
-			const scenesSupportingAdaptiveSampling = ['simple','gaussv2'];
+            const backendUrl = "https://monolith-backend.doxstress.workers.dev"; 
 
+            const sceneDisplayNames = {
+                'gaussv2': 'Caustic Hell v2',
+                'gauss': 'Caustic Hell Legacy',
+                'simple': 'Staircase',
+                'v3': 'Spheres v3',
+                'v2': 'Spheres v2',
+                'old': 'Spheres v1',
+                'javascript': 'Spheres Javascript'
+            };
+            const legacyScenes = ['gauss', 'v3', 'v2', 'old', 'javascript'];
             let wasmBinaries = {};
-			const legacyScenes = ['gauss', 'v3', 'v2', 'old', 'javascript'];
             let activeWorkers = [];
             let isBenchmarkRunning = false;
             const fullPath = self.location.href;
             const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
             threadInput.value = navigator.hardwareConcurrency || 4;
-       
             let renderWidth = canvas.width, renderHeight = canvas.height;
 
-            function checkCustomPreset() { if (benchmarkSelector.value === 'custom') { customSamplesGroup.style.display = 'flex'; } else { customSamplesGroup.style.display = 'none'; } }
-            checkCustomPreset();
-            benchmarkSelector.addEventListener('change', checkCustomPreset);
-
-            const masterPresets = {
-                'SmartphoneFriendly': {
-                    resolution: '800x800',
-                    samples: 32,
-                    maxDepth: 384,
-                    tileSize: 32,
-					noiseThreshold: 0.21,
-                },
-                'LightRendering': {
-                    resolution: '1280x720',
-                    samples: 64,
-                    maxDepth: 512,
-                    tileSize: 64,
-                    noiseThreshold: 0.18,
-				},
-                'Workstation': {
-                    resolution: '1600x900',
-                    samples: 128,
-                    maxDepth: 512,
-                    tileSize: 64,
-                    noiseThreshold: 0.14,
-				},
-                'Cinematic': {
-                    resolution: '2560x1440',
-                    samples: 512,
-                    maxDepth: 512,
-                    tileSize: 64,
-                    noiseThreshold: 0.10,
-				},
-				 'Photorealistic': {
-                    resolution: '2560x1440',
-                    samples: 1024,
-                    maxDepth: 512,
-                    tileSize: 64,
-                    noiseThreshold: 0.0001,
-				},
-				 'PIAV': {
-                    resolution: '3840x2160',
-                    samples: 2048,
-                    maxDepth: 512,
-                    tileSize: 64,
-                    noiseThreshold: 0.0001,
-				},
-				
-            };
-
-            function applyMasterPreset(presetName) {
-                const preset = masterPresets[presetName];
-                if (!preset) return;
-
-                resolutionInput.value = preset.resolution;
-                maxDepthInput.value = preset.maxDepth;
-                tileSizeInput.value = preset.tileSize;
-				noiseThresholdInput.value = preset.noiseThreshold;
-
-                const sampleValueStr = preset.samples.toString();
-                const isPresetSample = [...benchmarkSelector.options].some(opt => opt.value === sampleValueStr);
-
-                if (isPresetSample) {
-                    benchmarkSelector.value = sampleValueStr;
-                } else {
-                    benchmarkSelector.value = 'custom';
-                    customSamplesInput.value = preset.samples;
+            function seedStringToInt(str) {
+                let hash = 0, i, chr;
+                if (str.length === 0) return hash;
+                for (i = 0; i < str.length; i++) {
+                    chr = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + chr;
+                    hash |= 0; 
                 }
-                
-                checkCustomPreset();
+                return Math.abs(hash); 
             }
 
-            masterPresetSelector.addEventListener('change', (e) => {
-                applyMasterPreset(e.target.value);
-            });
-            function updateUIForScene() {
-                const selectedScene = sceneSelector.value;
-                const isWasmScene = selectedScene !== 'javascript';
-                const supportsDenoiser = (selectedScene === "javascript" || selectedScene === 'v2' || selectedScene === 'gauss' || selectedScene === 'v3' || selectedScene === "simple");
-                denoiserToggle.disabled = !supportsDenoiser;
-                if (!supportsDenoiser) {
-                    denoiserToggle.checked = false;
+            function generateRandomString(length) {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                let result = '';
+                for ( let i = 0; i < length; i++ ) {
+                    result += chars.charAt(Math.floor(Math.random() * chars.length));
                 }
-    const supportsAdaptive = scenesSupportingAdaptiveSampling.includes(selectedScene);
-    
-
-    noiseThresholdInput.disabled = !supportsAdaptive;
-
-    const supportsDebug = scenesSupportingDebug.includes(selectedScene);
-    debugToggle.disabled = !supportsDebug;
-    if (!supportsDebug) {
-        debugToggle.checked = false;
-    }
+                return result;
             }
-            sceneSelector.addEventListener('change', updateUIForScene);
-            updateUIForScene(); 
 
-            function parseAndUpdateResolution() {
-                const defaultWidth = 1600;
-    const defaultHeight = 900;
-    const resValue = resolutionInput.value.trim();
-
-    lastResolutionValue = resValue;
-
-                if (!resValue) {
-                    renderWidth = defaultWidth;
-                    renderHeight = defaultHeight;
-                } else {
-                    const parts = resValue.toLowerCase().split('x');
-                    if (parts.length !== 2) {
-                        renderWidth = defaultWidth;
-                        renderHeight = defaultHeight;
-                        resolutionInput.value = `${defaultWidth}x${defaultHeight}`;
-                        console.warn("Invalid resolution format. Falling back to 1600x900.");
-                    } else {
-                        const width = parseInt(parts[0], 10);
-                        const height = parseInt(parts[1], 10);
-
-                        if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
-                            renderWidth = defaultWidth;
-                            renderHeight = defaultHeight;
-                            resolutionInput.value = `${defaultWidth}x${defaultHeight}`;
-                            console.warn("Invalid resolution numbers. Falling back to 1600x900.");
-                        } else {
-                            renderWidth = width;
-                            renderHeight = height;
-                        }
-                    }
-                }
-                canvas.width = renderWidth;
-                canvas.height = renderHeight;
+            function cryptoHash(pixelData) {
+                return Promise.resolve(sha256(pixelData));
             }
 
             async function prepareWasm(benchmarkName) {
-    if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
-
-    try {
-        const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
-        if (!wasmResponse.ok) throw new Error(`Failed to fetch WASM file: ${wasmResponse.statusText}`);
-
-        if (legacyScenes.includes(benchmarkName)) {
-       
-            console.log(`Using ArrayBuffer loading for old scene: ${benchmarkName}`);
-            wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
-        } else {
-          
-            console.log(`Using compileStreaming for modern scene: ${benchmarkName}`);
-            wasmBinaries[benchmarkName] = await WebAssembly.compileStreaming(wasmResponse);
-        }
-
-    } catch (error) {
-        console.error("WASM Preparation Error:", error);
-        progressText.textContent = `Error: Could not load scene files.`;
-        throw error;
-    }
-}
+                if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
+                try {
+                    const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
+                    if (!wasmResponse.ok) throw new Error(`Failed to fetch WASM file: ${wasmResponse.statusText}`);
+                    if (legacyScenes.includes(benchmarkName)) {
+                        console.log(`Using ArrayBuffer loading for old scene: ${benchmarkName}`);
+                        wasmBinaries[benchmarkName] = await wasmResponse.arrayBuffer();
+                    } else {
+                        console.log(`Using compileStreaming for modern scene: ${benchmarkName}`);
+                        wasmBinaries[benchmarkName] = await WebAssembly.compileStreaming(wasmResponse);
+                    }
+                } catch (error) {
+                    console.error("WASM Preparation Error:", error);
+                    progressText.textContent = `Error: Could not load scene files.`;
+                    throw error;
+                }
+            }
             
-            async function runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser, debugMode, noiseThreshold) {
+            async function runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser, debugMode, noiseThreshold, challengeSeed) {
                 ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); progressFill.style.width = '0%';
                 const tiles = [];
                 for (let y = 0; y < renderHeight; y += TILE_SIZE) { 
@@ -527,68 +404,61 @@
                 let workQueue = [...tiles]; const totalTiles = tiles.length; let completedTiles = 0;
                 progressText.textContent = `Creating ${numThreads} thread(s)...`;
                 let startTime; let timerStarted = false; let hasFailed = false;
-
                 const isJsScene = benchmarkName === 'javascript';
 
                 return new Promise((resolve, reject) => {
                     let initializedWorkers = 0;
-                    const cleanupAndFail = (errorMessage) => { if (hasFailed) return; hasFailed = true; isBenchmarkRunning = false; console.error(errorMessage); progressText.textContent = `Error: ${errorMessage}`; activeWorkers.forEach(w => { if (w && w.worker) w.worker.terminate(); }); activeWorkers = []; reject(new Error(errorMessage)); };
+                    let dispatchStarted = false; 
+
+                    const cleanupAndFail = (errorMessage) => { 
+                        if (hasFailed) return; 
+                        hasFailed = true; 
+                        isBenchmarkRunning = false; 
+                        console.error(errorMessage); 
+                        progressText.textContent = `Error: ${errorMessage}`; 
+                        activeWorkers.forEach(w => { if (w && w.worker) w.worker.terminate(); }); 
+                        activeWorkers = []; 
+                        reject(new Error(errorMessage)); 
+                    };
                     
                     function onWorkerMessage(workerObj, e) {
                         if (!isBenchmarkRunning || hasFailed) return;
                         const msg = e.data;
                         switch (msg.type) {
                             case 'ready': 
+                            case 'scene-initialized': 
+                                if (workerObj.isReady) return;
                                 workerObj.isReady = true;
                                 initializedWorkers++;
                                 progressText.textContent = `Initializing ${initializedWorkers}/${numThreads} thread(s)...`;
-                                if (initializedWorkers === numThreads) {
+                                if (initializedWorkers === numThreads && !dispatchStarted) {
+                                    dispatchStarted = true; 
                                     progressText.textContent = `All threads ready. Starting...`;
-									if (!timerStarted) {
-                    startTime = performance.now();
-                    timerStarted = true;
-                }
+                                    if (!timerStarted) {
+                                        startTime = performance.now();
+                                        timerStarted = true;
+                                    }
                                     activeWorkers.forEach(w => dispatchWork(w));
                                 }
                                 break;
-                             case 'scene-initialized': 
-                                workerObj.isReady = true;
-                                initializedWorkers++;
-                                progressText.textContent = `Initializing scene in ${initializedWorkers}/${numThreads} thread(s)...`;
-                                if (initializedWorkers === numThreads) {
-                                    progressText.textContent = `All scenes initialized. Starting...`;
-									 
-        if (!timerStarted) {
-            startTime = performance.now();
-            timerStarted = true;
-        }
-                                    activeWorkers.forEach(w => dispatchWork(w));
+                            case 'result':
+                                const { pixelData, tile } = msg;
+                                const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
+                                createImageBitmap(imageData).then(imageBitmap => {
+                                    ctx.drawImage(imageBitmap, tile.x, tile.y);
+                                });
+                                completedTiles++; 
+                                const progressPercentage = (completedTiles / totalTiles) * 100;
+                                progressFill.style.width = `${progressPercentage}%`; 
+                                progressText.textContent = `${Math.round(progressPercentage)}%`;
+                                if (completedTiles === totalTiles) {
+                                    const totalTime = (performance.now() - startTime) / 1000;
+                                    activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
+                                    resolve({ time: totalTime });
+                                } else { 
+                                    dispatchWork(workerObj); 
                                 }
                                 break;
-                            
-
-case 'result':
-    const { pixelData, tile } = msg;
-
-   
-    const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
-    createImageBitmap(imageData).then(imageBitmap => {
-        ctx.drawImage(imageBitmap, tile.x, tile.y);
-    });
-    
-    completedTiles++; 
-    const progressPercentage = (completedTiles / totalTiles) * 100;
-    progressFill.style.width = `${progressPercentage}%`; 
-    progressText.textContent = `${Math.round(progressPercentage)}%`;
-    
-    if (completedTiles === totalTiles) {
-        const totalTime = (performance.now() - startTime) / 1000;
-        activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
-        resolve({ time: totalTime });
-    } else { 
-        dispatchWork(workerObj); 
-    }
-    break;
                             case 'error':
                                 cleanupAndFail(`Worker #${workerObj.id} failed: ${msg.error}`);
                                 break;
@@ -596,31 +466,28 @@ case 'result':
                     };
 
                     function dispatchWork(workerObj) { 
-    if (workQueue.length > 0) { 
-        const tile = workQueue.pop(); 
-      
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; 
-        ctx.fillRect(tile.x, tile.y, tile.size, tile.size);
-        ctx.font = 'bold 28px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'white'; 
-        ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
+                        if (workQueue.length > 0) { 
+                            const tile = workQueue.pop(); 
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; 
+                            ctx.fillRect(tile.x, tile.y, tile.size, tile.size);
+                            ctx.font = 'bold 28px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = 'white'; 
+                            ctx.fillText(workerObj.id, tile.x + tile.size / 2, tile.y + tile.size / 2);
 
-        const message = { 
-            type: 'render-tile', 
-            tile, 
-            canvasWidth: renderWidth, 
-            canvasHeight: renderHeight, 
-            samplesPerPixel: parseInt(benchmarkSelector.value === 'custom' ? customSamplesInput.value : benchmarkSelector.value, 10), 
-            maxDepth: parseInt(maxDepthInput.value, 10) || 512, 
-            useDenoiser: denoiserToggle.checked, 
-            debugMode: debugToggle.checked ? 1 : 0, 
-            noiseThreshold: parseFloat(noiseThresholdInput.value) || 0.11
-        };
-        workerObj.worker.postMessage(message); 
-    } 
-}
+                            const message = { 
+                                type: 'render-tile', 
+                                tile, 
+                                canvasWidth: renderWidth, 
+                                canvasHeight: renderHeight, 
+                                samplesPerPixel: samplesPerPixel, 
+                                maxDepth: MAX_DEPTH,              
+                                useDenoiser: useDenoiser,         
+                                debugMode: debugMode,             
+                                noiseThreshold: noiseThreshold,   
+                                challengeSeed: challengeSeed      
+                            };
+                            workerObj.worker.postMessage(message); 
+                        } 
+                    }
                     
                     for (let i = 0; i < numThreads; i++) {
                         try {
@@ -629,15 +496,13 @@ case 'result':
                             worker.onmessage = (e) => onWorkerMessage(workerObj, e);
                             worker.onerror = (e) => cleanupAndFail(`An unexpected error in Worker #${i}: ${e.message}`);
                             activeWorkers.push(workerObj);
-
                             if (isJsScene) {
-                              
                                 worker.postMessage({ type: 'init-scene', scene: 'cornell' });
                             } else {
                                 const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
-const wasmModule = wasmBinaries[benchmarkName];
-const isLegacy = legacyScenes.includes(benchmarkName);
-worker.postMessage({ type: 'init-wasm', wasmModule: wasmModule, jsUrl: jsUrl, isLegacy: isLegacy });
+                                const wasmModule = wasmBinaries[benchmarkName];
+                                const isLegacy = legacyScenes.includes(benchmarkName);
+                                worker.postMessage({ type: 'init-wasm', wasmModule: wasmModule, jsUrl: jsUrl, isLegacy: isLegacy });
                             }
                         } catch (error) {
                             return cleanupAndFail(`Failed to create Worker #${i}. ${error.message}`);
@@ -647,64 +512,284 @@ worker.postMessage({ type: 'init-wasm', wasmModule: wasmModule, jsUrl: jsUrl, is
             }
 
             async function startBenchmark(numThreads, targetTimeEl) {
-                isBenchmarkRunning = true;
-                startSingleButton.disabled = true; startMultiButton.disabled = true; stopButton.disabled = false;
-                targetTimeEl.textContent = '...'; progressBar.style.display = 'block'; progressText.textContent = '';
+                if (!currentRenderSettings) {
+                    alert("Settings not loaded from server yet. Please wait or refresh.");
+                    return;
+                }
+                const username = document.getElementById('usernameInput').value.trim();
+                const statusDiv = document.getElementById('submissionStatus');
                 
-                parseAndUpdateResolution();
+                if (!username) {
+                    statusDiv.textContent = "Username is required!";
+                    statusDiv.style.color = "#d93025"; 
+                    return;
+                }
 
-                try {
-                    let samplesPerPixel = parseInt(benchmarkSelector.value === 'custom' ? customSamplesInput.value : benchmarkSelector.value, 10);
-                    if (isNaN(samplesPerPixel) || samplesPerPixel <= 0) throw new Error("Please enter a valid number of samples.");
-                    const TILE_SIZE = parseInt(tileSizeInput.value, 10) || 64;
-                    const MAX_DEPTH = parseInt(maxDepthInput.value, 10) || 512;
-                    const benchmarkName = sceneSelector.value;
-                    const useDenoiser = denoiserToggle.checked;
-                    const debugMode = debugToggle.checked ? 1 : 0;
-				
-        const noiseThreshold = parseFloat(noiseThresholdInput.value) || 0.11;
-		
-                    await prepareWasm(benchmarkName);
-                    const result = await runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser, debugMode, noiseThreshold);
+                isBenchmarkRunning = true;
+                document.getElementById('startMultiButton').disabled = true;
+                document.getElementById('usernameInput').disabled = true;
+                document.getElementById('sceneSelector').disabled = true;
+                
+                statusDiv.textContent = "Initializing...";
+                statusDiv.style.color = "#fff";
+                progressText.textContent = "Contacting Server...";
+
+                 try {
+                    // 1. GET TURNSTILE TOKEN
+                    const turnstileToken = turnstile.getResponse();
+                    if (!turnstileToken) {
+                         statusDiv.textContent = "Please complete the CAPTCHA check.";
+                         statusDiv.style.color = "#d93025";
+                         isBenchmarkRunning = false; // Reset flag
+                         document.getElementById('startMultiButton').disabled = false; // Unlock button
+                         document.getElementById('usernameInput').disabled = false;
+                         document.getElementById('sceneSelector').disabled = false;
+                         return;
+                    }
+
+                    const scene = sceneSelector.value;
+                    
+                    // 2. SEND TOKEN IN HEADER (Or Query Param)
+                    // We will send it as a custom header 'X-Turnstile-Token'
+                    const res = await fetch(`${backendUrl}/api/start?scene=${scene}`, {
+                        headers: {
+                            'X-Turnstile-Token': turnstileToken
+                        }
+                    });
+                    
+                    if (!res.ok) {
+                         const json = await res.json().catch(() => ({}));
+                         throw new Error(json.error || "Server connection failed");
+                    }
+
+                    const data = await res.json();
+                    const currentToken = data.token;
+                    const seedForWorkers = seedStringToInt(data.seed); 
+                    
+                    console.log("Benchmark Started. Seed:", data.seed);
+
+                    await prepareWasm(scene);
+                    
+                    const result = await runBenchmark(
+                        numThreads, 
+                        currentRenderSettings.samples, 
+                        currentRenderSettings.tileSize, 
+                        currentRenderSettings.maxDepth, 
+                        scene, 
+                        currentRenderSettings.denoiser, 
+                        0, 
+                        currentRenderSettings.noiseThreshold, 
+                        seedForWorkers 
+                    );
+
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
-                    progressText.textContent = 'Done!';
+                    progressText.textContent = 'Done! Uploading...';
+                    statusDiv.textContent = "Validating & Uploading...";
+                    statusDiv.style.color = "#ff9800"; 
+
+                    const ctx = canvas.getContext('2d');
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const hash = await cryptoHash(imgData.data);
+                    
+                    const payload = {
+    token: currentToken,
+    clientHash: hash,
+    username: username,
+    scene: scene,
+    threads: parseInt(threadInput.value, 10) || 1 // <--- MUST BE HERE
+};
+
+                    const subRes = await fetch(`${backendUrl}/api/submit`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const subJson = await subRes.json();
+
+                    if (subRes.ok) {
+                        statusDiv.textContent = `Success! Official Score: ${(subJson.server_score / 1000).toFixed(3)}s`;
+                        statusDiv.style.color = "#28a745"; 
+                        targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s (Server)`;
+                        fetchLeaderboard();
+                    } else {
+                        statusDiv.textContent = "Rejected: " + (subJson.verbose || subJson.error);
+                        statusDiv.style.color = "#d93025"; 
+                    }
+
                 } catch (error) {
-                   console.error("Benchmark failed:", error.message);
-                   progressText.textContent = `Error: ${error.message}`;
+                   console.error("Benchmark failed:", error);
+                   progressText.textContent = "Error";
+                   statusDiv.textContent = error.message;
+                   statusDiv.style.color = "#d93025";
                 } finally {
                     if (isBenchmarkRunning) {
                         isBenchmarkRunning = false;
-                        startSingleButton.disabled = false; startMultiButton.disabled = false; stopButton.disabled = true;
+                        document.getElementById('startMultiButton').disabled = false;
+                        document.getElementById('usernameInput').disabled = false;
+                        document.getElementById('sceneSelector').disabled = false;
                     }
                 }
             }
 
-            stopButton.addEventListener('click', () => {
-                if (!isBenchmarkRunning) return;
-                console.log("Stopping benchmark..."); isBenchmarkRunning = false;
-                activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
-                progressText.textContent = 'Benchmark Stopped.';
-                singleThreadTimeEl.textContent = '-'; multiThreadTimeEl.textContent = '-';
-                startSingleButton.disabled = false; startMultiButton.disabled = false; stopButton.disabled = true;
-            });
-            
-            resetButton.addEventListener('click', () => {
-                console.log("Resetting settings to default.");
-                sceneSelector.value = "gauss";
-                benchmarkSelector.value = "256"; customSamplesInput.value = "128";
-                threadInput.value = navigator.hardwareConcurrency || 4;
-                tileSizeInput.value = "64"; maxDepthInput.value = "512";
-                resolutionInput.value = "";
-                denoiserToggle.checked = false;
-				 debugToggle.checked = false;
-				 noiseThresholdInput.value = "0.11";
-                checkCustomPreset();
-                updateUIForScene();
+            // LOOP MODE
+            document.getElementById('startLoopButton').addEventListener('click', async () => {
+                const iterations = parseInt(document.getElementById('loopIterations').value) || 1;
+                let loopResults = [];
+                const loopOutput = document.getElementById('loopOutput');
+                loopOutput.value = "Starting loop...";
+                
+                if (!currentRenderSettings) {
+                    loopOutput.value = "Fetching scene settings first...";
+                    await fetchSceneSettings();
+                    if (!currentRenderSettings) {
+                        loopOutput.value = "Error: Could not fetch settings. Cannot loop.";
+                        return;
+                    }
+                }
+                isBenchmarkRunning = true;
+                try {
+                    for (let i = 0; i < iterations; i++) {
+                        const seed = generateRandomString(64);
+                        document.getElementById('seedInput').value = seed;
+                        const seedInt = seedStringToInt(seed);
+                        progressText.textContent = `Loop ${i+1}/${iterations} (Seed: ${seed})`;
+
+                        await prepareWasm(sceneSelector.value);
+                        
+                        await runBenchmark(
+                            parseInt(threadInput.value) || 4,
+                            currentRenderSettings.samples,
+                            currentRenderSettings.tileSize,
+                            currentRenderSettings.maxDepth,
+                            sceneSelector.value,
+                            currentRenderSettings.denoiser,
+                            0, 
+                            currentRenderSettings.noiseThreshold,
+                            seedInt
+                        );
+
+                        const ctx = canvas.getContext('2d');
+                        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const hash = await cryptoHash(imgData.data);
+                        
+                        loopResults.push({ seed: seed, hash: hash, scene: sceneSelector.value });
+                        loopOutput.value = JSON.stringify(loopResults, null, 2);
+                    }
+                    document.getElementById('uploadToDbButton').style.display = 'inline-block';
+                    progressText.textContent = "Loop Complete.";
+                } catch(e) {
+                    console.error(e);
+                    loopOutput.value += "\nError: " + e.message;
+                } finally {
+                    isBenchmarkRunning = false;
+                }
             });
 
-            startSingleButton.addEventListener('click', () => { startBenchmark(1, singleThreadTimeEl); });
-            startMultiButton.addEventListener('click', () => { let numThreads = parseInt(threadInput.value, 10); if (isNaN(numThreads) || numThreads <= 0) { numThreads = navigator.hardwareConcurrency || 4; threadInput.value = numThreads; } startBenchmark(numThreads, multiThreadTimeEl); });
+            async function fetchSceneSettings() {
+			    fetchLeaderboard();
+                const scene = sceneSelector.value;
+                const display = document.getElementById('settingsDisplay');
+                display.textContent = "Fetching settings from server...";
+                document.getElementById('startMultiButton').disabled = true;
+                try {
+                    const res = await fetch(`${backendUrl}/api/settings?scene=${scene}`);
+                    if (!res.ok) throw new Error("Failed to load settings");
+                    currentRenderSettings = await res.json();
+                    display.innerHTML = `Target: ${currentRenderSettings.resolution} | Samples: ${currentRenderSettings.samples}<br>Bounces: ${currentRenderSettings.maxDepth} | Tile: ${currentRenderSettings.tileSize}px`;
+                    const [w, h] = currentRenderSettings.resolution.split('x').map(Number);
+                    canvas.width = w; canvas.height = h; renderWidth = w; renderHeight = h;
+                    document.getElementById('startMultiButton').disabled = false;
+                } catch (e) {
+                    display.textContent = "Error loading settings. Check connection.";
+                    console.error(e);
+                }
+            }
 
+            sceneSelector.addEventListener('change', fetchSceneSettings);
+            fetchSceneSettings(); 
+
+            document.getElementById('uploadToDbButton').addEventListener('click', async () => {
+                const loopOutput = document.getElementById('loopOutput');
+                const loopResults = JSON.parse(loopOutput.value || "[]");
+                if(loopResults.length === 0) return;
+                
+                // Prompt for admin password
+                const secret = prompt("Enter Admin Secret:");
+                if(!secret) return;
+
+                loopOutput.value = "Uploading...";
+                try {
+                    const res = await fetch(`${backendUrl}/admin/populate`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-Admin-Secret': secret // Send the secret header
+                        },
+                        body: JSON.stringify(loopResults)
+                    });
+                    const json = await res.json();
+                    loopOutput.value = "Upload Result:\n" + JSON.stringify(json, null, 2);
+                } catch(e) {
+                    loopOutput.value = "Error:\n" + e.message;
+                }
+            });
+
+            async function fetchLeaderboard() {
+                const tbody = document.getElementById('leaderboardBody');
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Loading...</td></tr>';
+                try {
+                    const sceneId = sceneSelector.value;
+                    const friendlyName = sceneDisplayNames[sceneId] || sceneId;
+                    document.getElementById('leaderboardSceneName').textContent = friendlyName;
+                    const res = await fetch(`${backendUrl}/api/leaderboard?scene=${sceneId}`);
+                    const data = await res.json();
+                    tbody.innerHTML = '';
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No scores yet.</td></tr>';
+                        return;
+                    }
+                    data.forEach((row, index) => {
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = "1px solid #444";
+                        
+                        const rankTd = document.createElement('td'); rankTd.style.padding = "8px"; rankTd.style.textAlign = "center"; rankTd.textContent = index + 1;
+                        const userTd = document.createElement('td'); userTd.style.padding = "8px"; userTd.style.textAlign = "center"; userTd.style.fontWeight = "bold"; userTd.style.color = "#fff"; userTd.textContent = row.username; 
+                        
+                        // --- START NEW THREADS CELL ---
+                        const threadTd = document.createElement('td'); 
+                        threadTd.style.padding = "8px"; 
+                        threadTd.style.textAlign = "center"; 
+                        threadTd.style.color = "#aaa"; 
+                        threadTd.textContent = row.threads || "-"; // Fallback if old data is null
+                        // --- END NEW THREADS CELL ---
+
+                        const timeTd = document.createElement('td'); timeTd.style.padding = "8px"; timeTd.style.textAlign = "center"; timeTd.style.color = "#28a745"; timeTd.textContent = (row.score_ms / 1000).toFixed(3) + "s";
+                        const dateTd = document.createElement('td'); dateTd.style.padding = "8px"; dateTd.style.textAlign = "center"; dateTd.style.color = "#aaa"; dateTd.style.fontSize = "0.8em"; dateTd.textContent = new Date(row.timestamp).toLocaleDateString();
+                        
+                        tr.appendChild(rankTd); 
+                        tr.appendChild(userTd); 
+                        tr.appendChild(threadTd); // <--- Append it here
+                        tr.appendChild(timeTd); 
+                        tr.appendChild(dateTd);
+                        tbody.appendChild(tr);
+                    });
+                } catch (e) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:red;">Failed to load.</td></tr>';
+                }
+            }
+
+            document.getElementById('refreshLeaderboard').addEventListener('click', fetchLeaderboard);
+            fetchLeaderboard();
+
+            document.getElementById('startMultiButton').addEventListener('click', () => {
+                let numThreads = parseInt(threadInput.value, 10);
+                if (isNaN(numThreads) || numThreads <= 0) {
+                    numThreads = navigator.hardwareConcurrency || 4;
+                    threadInput.value = numThreads;
+                }
+                startBenchmark(numThreads, multiThreadTimeEl);
+            });
         })();
     </script>
 </body>
