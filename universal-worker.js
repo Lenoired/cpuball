@@ -22,7 +22,8 @@ function onWasmModuleReady(m) {
     } else {
       
         console.log('Wrapping modern render_tile function.');
-        wasm_renderTile_modern = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'boolean', 'number', 'number']);
+        // MODIFICATION: Added 'number' at the end of the array for challengeSeed
+        wasm_renderTile_modern = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'boolean', 'number', 'number', 'number']);
     }
     
     self.postMessage({ type: 'ready' });
@@ -122,9 +123,9 @@ const C = {
 const U64_MASK = (1n << 64n) - 1n;
 const MUL = 6364136223846793005n;
 let pcgState = { state: 0n, inc: 0n };
-function resetPrngForTile(x, y, width) {
-    pcgState.state = BigInt(y * width + x + 1);
-    pcgState.inc = BigInt((y * width + x) * 2 + 1);
+function resetPrngForTile(x, y, width, seed = 0) {
+    pcgState.state = BigInt(y * width + x + 1) + BigInt(seed);
+    pcgState.inc = BigInt((y * width + x) * 2 + 1) + BigInt(seed);
 }
 function pcg32Random() {
     let oldstate = pcgState.state;
@@ -648,7 +649,8 @@ function generateDemandingScene() {
     return scene;
 }
 function renderJsTile(data) {
-    const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser } = data;
+    // MODIFICATION: Added challengeSeed to destructuring
+    const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, challengeSeed } = data;
     const scene = js_scene;
     if (!scene) { self.postMessage({ type: 'error', error: 'JS Scene not initialized before render call.'}); return; }
     const pixelData = new Uint8ClampedArray(tile.size * tile.size * 4);
@@ -660,7 +662,8 @@ function renderJsTile(data) {
         const y = tile.y + yOffset;
         for (let xOffset = 0; xOffset < tile.size; xOffset++) {
             const x = tile.x + xOffset;
-            resetPrngForTile(x, y, canvasWidth);
+            // MODIFICATION: Pass challengeSeed to PRNG reset
+            resetPrngForTile(x, y, canvasWidth, challengeSeed);
             totalColor.r=totalColor.g=totalColor.b=0;
             if(useDenoiser){totalAlbedo.r=totalAlbedo.g=totalAlbedo.b=0;totalNormal.x=totalNormal.y=totalNormal.z=0}
             for (let s = 0; s < samplesPerPixel; s++) {
