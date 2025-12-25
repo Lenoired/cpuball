@@ -9,6 +9,10 @@
 	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <title>Monolith Pathtracer</title>
     <style>
+	/* Add this at the very top of your CSS */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
         :root {
             --bg-color: #121212;
             --surface-color: #1e1e1e;
@@ -35,18 +39,7 @@
             box-sizing: border-box;
             -webkit-user-select: none; -ms-user-select: none; user-select: none;
         }
-.notice-banner {
-            background-color: #ff9800; /* Orange for visibility */
-            color: #121212; /* Dark text for contrast */
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            font-weight: bold;
-            font-size: 1.1em;
-            border: 1px solid #e68900;
-            text-transform: uppercase;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
+
         input, textarea, select { -webkit-user-select: text; -ms-user-select: text; user-select: text; }
 
         #container {
@@ -168,14 +161,50 @@
         #stopButton:not(:disabled) { background-color: var(--button-secondary-bg); }
         #stopButton:not(:disabled):hover { background-color: var(--button-secondary-hover); }
 
-        #results {
-            margin-top: 2rem;
-            background-color: var(--input-bg-color);
-            padding: 1rem 1.5rem;
-            border-radius: 8px;
-            display: inline-block;
-            min-width: 350px;
-        }
+        /* Glassmorphism Card for Results */
+#results {
+    margin-top: 2rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px); /* Optional: adds blur behind card */
+    padding: 2rem;
+    border-radius: 16px;
+    display: block; /* Changed from inline-block for better centering */
+    width: 100%;
+    max-width: 400px; /* Limits width so scaling kicks in */
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    overflow: hidden; /* Essential for the scaler */
+    transition: transform 0.2s ease;
+}
+
+#results:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+#multiThreadTime {
+    /* Gradient Text */
+    background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    
+    display: inline-block;
+    white-space: nowrap; /* Prevents wrapping, forces scaling */
+    font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace; /* Monospace for numbers */
+    font-weight: 800;
+    line-height: 1.2;
+    transition: font-size 0.1s ease-out;
+	/* Ensure it handles potential overflow gracefully if it hits the min size */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Adds "..." if it's somehow STILL too long */
+    
+    /* Improve alignment */
+    display: inline-block;
+    vertical-align: middle;
+}
         #results p { margin: 0.5rem 0; font-size: 1.2em; text-align: left; color: #fff; }
         #results strong { display: inline-block; width: 200px; }
 
@@ -190,11 +219,46 @@
         #disclaimer { margin-top: 1rem; color: #888; font-size: 0.9em; font-style: italic; }
 
         @media (max-width: 768px) {
-            body { padding: 0.5rem; }
-            #container { padding: 1rem; }
-            h1 { font-size: 2em; }
-            .control-fieldset { min-width: 100%; }
-        }
+    body {
+        /* Stop using Flex on mobile, it causes the "off-center" shift when scrolling */
+        display: block; 
+        padding: 0;
+        background-color: var(--surface-color); /* Match container color for seamless look */
+    }
+
+    #container {
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
+        border-radius: 0;
+        /* Reduce padding so the Turnstile (300px) fits on small screens */
+        padding: 10px; 
+        box-shadow: none;
+        overflow-x: hidden; /* prevents the grey box itself from causing scroll */
+    }
+
+    /* Fix the User Config Box to fit the Turnstile */
+    .user-config-box {
+        width: 100% !important;
+        min-width: 0 !important;
+        padding: 10px !important; /* Critical: gives space for the captcha */
+        margin-left: 0;
+        margin-right: 0;
+        box-sizing: border-box;
+    }
+
+    /* Force the canvas to fit */
+    canvas {
+        max-width: 100%;
+        height: auto;
+    }
+
+    /* Fix the Result Card */
+    #results {
+        width: 100%;
+        box-sizing: border-box; 
+    }
+}
 .master-preset-container {
     width: 100%;
     display: flex;
@@ -211,18 +275,246 @@
     background-color: var(--input-bg-color);
     color: var(--primary-text-color);
 }
+/* Tooltip Wrapper */
+.tooltip-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
 
+/* The '?' Circle */
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid #d93025;
+    color: #d93025;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: help;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.info-icon:hover {
+    background-color: #d93025;
+    color: white;
+}
+
+/* The Popup Text Box */
+.tooltip-content {
+    visibility: hidden;
+    width: 260px;
+    background-color: #222;
+    color: #ddd;
+    text-align: center;
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid #444;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.6);
+    font-size: 0.9rem;
+    font-weight: normal;
+    line-height: 1.4;
+    
+    /* Position specific */
+    position: absolute;
+    bottom: 135%; /* Sits above the question mark */
+    left: 50%;
+    margin-left: -130px; /* Centers the box */
+    
+    /* Animation */
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    transform: translateY(10px);
+    z-index: 100;
+    pointer-events: none; /* Allows mouse to pass through when hidden */
+}
+
+/* The little arrow pointing down */
+.tooltip-content::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -6px;
+    border-width: 6px;
+    border-style: solid;
+    border-color: #222 transparent transparent transparent;
+}
+
+/* Logic: When hovering or focusing the icon, show the content */
+.info-icon:hover .tooltip-content,
+.info-icon:focus .tooltip-content {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+}
 .control-group:has(#noiseThresholdInput:disabled) {
     opacity: 0.5;
     pointer-events: none;
 }
+/* Toggle Switch Container */
+.leaderboard-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+}
 
+.toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: #2a2a2a;
+    padding: 8px 20px;
+    border-radius: 30px;
+    border: 1px solid #444;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.2s;
+}
+
+.toggle-wrapper:hover {
+    border-color: #666;
+}
+
+/* The clickable labels */
+.toggle-label {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: #666;
+    transition: color 0.3s ease;
+}
+
+.toggle-label.active {
+    color: #fff;
+}
+
+/* The Pill Switch */
+.toggle-switch {
+    position: relative;
+    width: 50px;
+    height: 26px;
+    background-color: #333;
+    border-radius: 13px;
+    transition: background-color 0.3s ease;
+}
+
+/* The Sliding Knob */
+.toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background-color: #888;
+    border-radius: 50%;
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1), background-color 0.3s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+/* Active State (Pending) */
+.toggle-wrapper.pending-mode .toggle-switch {
+    background-color: #d93025; /* Red accent for Pending */
+}
+
+.toggle-wrapper.pending-mode .toggle-knob {
+    transform: translateX(24px);
+    background-color: #fff;
+}
+
+.toggle-wrapper.verified-mode .toggle-switch {
+    background-color: #28a745; /* Green accent for Verified */
+}
+
+.toggle-wrapper.verified-mode .toggle-knob {
+    background-color: #fff;
+}
+/* Add this new class */
+.table-scroll-wrapper {
+    width: 100%;
+    overflow-x: auto; /* The scrolling happens HERE now */
+    -webkit-overflow-scrolling: touch;
+    margin-top: 10px;
+}
+
+/* 1. FORCE TABLES TO SCROLL INSIDE THE BOX */
+.lb-view {
+    display: none;
+    width: 100%;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
+.lb-view.active-view {
+    display: block; /* Keep your existing animation logic if you have it */
+}
+
+/* Optional: Make the table font smaller on mobile to help it fit */
+.lb-view table {
+    min-width: 500px; /* Ensures table doesn't squish too much, forces scroll instead */
+    font-size: 0.9em;
+}
+
+
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 400px) {
+    .cf-turnstile {
+        transform: scale(0.85); /* Shrink to 85% size */
+        transform-origin: center; /* Scale from the middle */
+        margin: 0 auto; /* Keep it centered */
+        max-width: 300px; /* Ensure container doesn't block clicks */
+    }
+}
+/* MOBILE TOOLTIP FIX: 
+   On small screens, make the tooltip appear as a centered popup 
+   instead of floating near the icon.
+*/
+@media (max-width: 768px) {
+    .tooltip-content {
+        /* Fixed position relative to the screen window */
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        bottom: auto;
+        
+        /* 1. FORCE CENTERING:
+           We use !important to prevent the desktop hover animation 
+           from breaking the alignment when you click it. */
+        transform: translate(-50%, -50%) !important;
+        
+        /* 2. SIZING: */
+        margin-left: 0;
+        width: 85vw; /* 85% of screen width */
+        max-width: 320px;
+        
+        /* 3. VISUALS: */
+        z-index: 99999;
+        background-color: #222;
+        /* This creates the dark overlay behind the popup */
+        box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7); 
+        border: 1px solid #555;
+    }
+
+    /* Hide the little arrow triangle on mobile */
+    .tooltip-content::after {
+        display: none;
+    }
+}
     </style>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.11.1/sha256.min.js"></script>
 </head>
 <body>
     <div id="container">
-		 <div class="notice-banner">⚠️ For the moment, only Staircase scene is available ⚠️</div>
         <h1>Monolith Pathtracer</h1>
         <p>A CPU path tracing utility.</p>
 
@@ -237,13 +529,10 @@
                 <div class="control-group">
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
-                        <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option>
-                        <option value="gauss">Caustic Hell (old, slow, needs >256 ray bounces, WASM)</option>
+                        <!-- <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option> -->
                         <option value="simple" selected>Staircase (fastest, more advanced, WASM)</option>
-                        <option value="v3">Spheres v3 (slow, realistic, WASM)</option>
-                        <option value="v2">Spheres v2 (slow, unrealistic, WASM)</option>
-                        <option value="old">Spheres v1 (slowest, <50 ray bounces recommended, WASM)</option>
-                        <option value="javascript">Spheres JS (inefficient, JavaScript)</option>
+                        <!-- <option value="v3">Spheres v3 (slow, realistic, WASM)</option> -->
+                        <!-- <option value="javascript">Spheres JS (inefficient, JavaScript)</option> -->
                     </select>
                 </div>
                 <div class="control-group">
@@ -251,49 +540,46 @@
                     <input type="number" id="threadInput" title="Number of threads to run." min="1">
                 </div>
                
-                <!-- START DEBUG SECTION -->
-                <div id="debug-section" class="control-group" style="display: none; border: 1px solid #d93025; padding: 10px; border-radius: 8px; margin-top: 10px;">
-                    <label style="color: #d93025; font-weight: bold;">DEBUG: Challenge Seed</label>
-                    <input type="text" id="seedInput" value="0" title="Seed for deterministic noise">
-                </div>
-                <!-- TEST ENVIRONMENT SECTION -->
+               
+         
                 <div id="test-env-section" class="control-group" style="display: none; border: 1px solid #d93025; padding: 10px; border-radius: 8px; margin-top: 10px;">
-                    <legend style="color: #d93025; font-weight: bold;">DEBUG: Data Generator</legend>
+                    <legend style="color: #d93025; font-weight: bold;">Admin Panel</legend>
                     <div class="inline-group">
-                        <label>Iterations:</label>
-                        <input type="number" id="loopIterations" value="5" style="width: 60px;">
-                        <button id="startLoopButton" class="benchmark-button" style="padding: 5px 10px; font-size: 0.9em;">Start Loop</button>
+                         <button id="verifyPendingButton" class="benchmark-button" style="background-color: #d93025; padding: 10px 20px; font-size: 0.9em; width: 100%;">Verify Pending Entries</button>
                     </div>
-                    <div class="inline-group" style="margin-top:5px">
-                         <button id="uploadToDbButton" class="benchmark-button" style="background-color: #ff9800; padding: 5px 10px; font-size: 0.9em; display:none;">Upload JSON to DB</button>
+                    <div style="margin-top: 5px;">
+                        <label style="font-size: 0.8em; color: #888;">System Log:</label>
+                        <textarea id="loopOutput" rows="10" readonly style="width:100%; font-family: monospace; font-size: 0.8em; color: #00ff00; background: #000; border: 1px solid #333; padding: 5px; resize: vertical;"></textarea>
                     </div>
-                    <textarea id="loopOutput" rows="5" style="width:100%; margin-top:10px; font-family: monospace; font-size: 0.8em; color: black;"></textarea>
                 </div>
-                
+
                 <script>
                     const urlParams = new URLSearchParams(window.location.search);
-                    if (urlParams.get('debug') === 'true') { document.getElementById('debug-section').style.display = 'block'; }
-                    if (urlParams.get('test') === 'true') { document.getElementById('test-env-section').style.display = 'block'; }
+                  
+                    if (urlParams.get('test') === 'true') { 
+    document.getElementById('test-env-section').style.display = 'block'; 
+    document.getElementById('verifyPendingButton').style.display = 'inline-block';
+}
                 </script>
 
-                <!-- USER CONFIG SECTION -->
-                <div style="flex: 1; min-width: 300px; max-width: 500px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #2a2a2a; border-radius: 12px; padding: 20px; border: 1px solid #444; margin-top: 1.2rem;">
+           
+                <div class="user-config-box" style="flex: 1; max-width: 500px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #2a2a2a; border-radius: 12px; padding: 20px; border: 1px solid #444; margin-top: 1.2rem;">
                     <h3 style="margin-top: 0; color: #fff;">User Configuration</h3>
                     
                     <label for="usernameInput" style="margin-bottom: 8px; color: #ccc;">Username (Required):</label>
                     <input type="text" id="usernameInput" placeholder="Enter name (max 20 chars)" maxlength="20" style="text-align: center; font-weight: bold; width: 80%; margin-bottom: 15px;">
-                     <!-- TURNSTILE WIDGET -->
+                 
         <div style="margin-top: 10px; display: flex; justify-content: center;">
             <div class="cf-turnstile" data-sitekey="0x4AAAAAACI12ODIopZw2_DX" data-theme="dark"></div>
         </div>
-                    <div id="settingsDisplay" style="font-size: 0.8em; color: #888; margin-bottom: 15px; font-family: monospace;">
-                        Loading settings...
-                    </div>
+                   <div id="settingsDisplay" style="font-size: 0.8em; color: #888; margin-top: 15px; margin-bottom: 15px; font-family: monospace; text-align: center;">
+    Loading settings...
+</div>
 
-                    <!-- Status Message Area -->
+                 
                     <div id="submissionStatus" style="font-weight:bold; min-height: 24px; text-align: center; margin-bottom: 10px;"></div>
                 </div>
-                <!-- END USER CONFIG SECTION -->
+              
             </fieldset>
         </div>
 
@@ -302,29 +588,88 @@
         </div>
         
         <div id="results">
-            <p><strong>Multi-thread time:</strong> <span id="multiThreadTime">-</span></p>
-        </div>
+    <p style="font-size: 0.9em; text-transform: uppercase; letter-spacing: 2px; color: #888; margin: 0 0 10px 0; font-weight: 600;">
+        Render Time
+    </p>
+   
+    <div style="height: 60px; display: flex; align-items: center; justify-content: center;">
+        <span id="multiThreadTime" style="font-size: 3em;">-</span>
+    </div>
+</div>
 
         <div id="leaderboard-section" style="margin-top: 2rem; width:100%; text-align: center;">
-            <h3>Leaderboard (<span id="leaderboardSceneName">gaussv2</span>)</h3>
-            <button id="refreshLeaderboard" class="benchmark-button" style="padding: 5px 15px; font-size: 0.8em; margin-bottom:10px;">Refresh</button>
-            
-            <table style="width:100%; border-collapse: collapse; color: #eee; margin: 0 auto;">
-                <thead>
-                    <tr style="background:#333; text-align:center;">
-                        <th style="padding:8px; width: 10%;">Rank</th>
-                        <th style="padding:8px; width: 30%;">User</th> <!-- Reduced User width slightly -->
-                        <th style="padding:8px; width: 15%;">Threads</th> <!-- NEW COLUMN -->
-                        <th style="padding:8px; width: 25%;">Time</th>
-                        <th style="padding:8px; width: 20%;">Date</th>
-                    </tr>
-                </thead>
-                <tbody id="leaderboardBody">
-                    <tr><td colspan="4" style="text-align:center; padding:10px;">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
+    <h3>Leaderboard (<span id="leaderboardSceneName">gaussv2</span>)</h3>
+    
+    <div class="leaderboard-controls">
         
+        <div class="toggle-wrapper verified-mode" id="lbToggle">
+            <span class="toggle-label active" id="lblVerified">Verified</span>
+            <div class="toggle-switch">
+                <div class="toggle-knob"></div>
+            </div>
+            <span class="toggle-label" id="lblPending">Pending</span>
+        </div>
+
+        <button id="refreshLeaderboard" class="benchmark-button" style="padding: 8px 20px; font-size: 0.9em;">Refresh Data</button>
+    </div>
+
+   
+    <div id="viewVerified" class="lb-view active-view">
+	<div class="table-scroll-wrapper"> 
+    
+        <table style="width:100%; border-collapse: collapse; color: #eee; margin: 0 auto;">
+            <thead>
+                <tr style="background:#333; text-align:center;">
+                    <th style="padding:8px; width: 10%;">Rank</th>
+                    <th style="padding:8px; width: 30%;">User</th>
+                    <th style="padding:8px; width: 15%;">Threads</th>
+                    <th style="padding:8px; width: 25%;">Time</th>
+                    <th style="padding:8px; width: 20%;">Date</th>
+                </tr>
+            </thead>
+            <tbody id="leaderboardBody">
+                <tr><td colspan="5" style="text-align:center; padding:10px;">Loading...</td></tr>
+            </tbody>
+        </table>
+		</div> 
+    </div>
+
+    <div id="viewPending" class="lb-view">
+    
+ 
+    <div class="tooltip-wrapper">
+        <h4 style="color: #d93025; margin: 0;">Unverified Submissions</h4>
+        
+       
+        <div class="info-icon" tabindex="0">
+            ?
+            <div class="tooltip-content">
+                These scores are waiting for admin approval. 
+                <br><br>
+                They are checked to ensure the render wasn't faked or modified. Once approved, they move to Verified.
+            </div>
+        </div>
+    </div>
+ 
+ <div class="table-scroll-wrapper">
+    <table style="width:100%; border-collapse: collapse; color: #eee; margin: 0 auto;">
+ 
+            <thead>
+                <tr style="background:#333; text-align:center;">
+                    <th style="padding:8px; width: 10%;">Rank</th>
+                    <th style="padding:8px; width: 30%;">User</th>
+                    <th style="padding:8px; width: 15%;">Threads</th>
+                    <th style="padding:8px; width: 25%;">Time</th>
+                    <th style="padding:8px; width: 20%;">Date</th>
+                </tr>
+            </thead>
+            <tbody id="pendingBody">
+                <tr><td colspan="5" style="text-align:center; padding:10px;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+	</div>
+</div>
         <br><br><h3>Please note:</h3>
 		<p id="disclaimer">1. Scene initialization may take a few moments, particularly on tests with a high sample count.</p>
 		<p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p>
@@ -333,6 +678,13 @@
         (function() {
             let currentRenderSettings = null; 
             const startMultiButton = document.getElementById('startMultiButton');
+			const lbToggle = document.getElementById('lbToggle');
+const viewVerified = document.getElementById('viewVerified');
+const viewPending = document.getElementById('viewPending');
+const lblVerified = document.getElementById('lblVerified');
+const lblPending = document.getElementById('lblPending');
+
+let isPendingView = false;
             const threadInput = document.getElementById('threadInput');
             const canvas = document.getElementById('renderCanvas');
             const ctx = canvas.getContext('2d');
@@ -361,16 +713,49 @@
             const basePath = fullPath.substring(0, fullPath.lastIndexOf('/'));
             threadInput.value = navigator.hardwareConcurrency || 4;
             let renderWidth = canvas.width, renderHeight = canvas.height;
+function scaleResultText() {
+    const el = document.getElementById('multiThreadTime');
+    const container = document.getElementById('results');
+    
+    if (!el || !container) return;
 
-            function seedStringToInt(str) {
-                let hash = 0, i, chr;
-                if (str.length === 0) return hash;
-                for (i = 0; i < str.length; i++) {
-                    chr = str.charCodeAt(i);
-                    hash = ((hash << 5) - hash) + chr;
-                    hash |= 0; 
+   
+    const maxFontSize = 3; 
+    const minFontSize = 1.3; 
+    
+ 
+    el.style.fontSize = `${maxFontSize}em`;
+    
+   
+    const availableWidth = container.clientWidth - 40;
+    const textWidth = el.scrollWidth;
+    
+   
+    if (textWidth > availableWidth) {
+       
+        let newSize = (availableWidth / textWidth) * maxFontSize;
+        
+      
+        if (newSize < minFontSize) {
+            newSize = minFontSize;
+        }
+        
+        el.style.fontSize = `${newSize}em`;
+    }
+}
+
+window.addEventListener('resize', scaleResultText);
+         
+            function hashStringTo64Bit(str) {
+                let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+                for (let i = 0, ch; i < str.length; i++) {
+                    ch = str.charCodeAt(i);
+                    h1 = Math.imul(h1 ^ ch, 2654435761);
+                    h2 = Math.imul(h2 ^ ch, 1597334677);
                 }
-                return Math.abs(hash); 
+                h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+                h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+                return [(h1 >>> 0), (h2 >>> 0)];
             }
 
             function generateRandomString(length) {
@@ -386,13 +771,12 @@
                 return Promise.resolve(sha256(pixelData));
             }
 
-            // HELPER: Wait for user to solve CAPTCHA
-            // Returns a promise that resolves when a token is available
+       
             async function getFreshTurnstileToken(msgElement) {
                 let token = turnstile.getResponse();
                 if (token) return token;
 
-                // If no token, we must wait for user
+              
                 msgElement.textContent = "Please solve the CAPTCHA to proceed...";
                 msgElement.style.color = "#ff9800";
                 
@@ -423,77 +807,103 @@
                 }
             }
             
-            async function runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser, debugMode, noiseThreshold, challengeSeed) {
-                ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); progressFill.style.width = '0%';
-                const tiles = [];
-                for (let y = 0; y < renderHeight; y += TILE_SIZE) { 
-                    for (let x = 0; x < renderWidth; x += TILE_SIZE) { 
-                        tiles.push({ x, y, size: TILE_SIZE }); 
-                    } 
-                }
-                let workQueue = [...tiles]; const totalTiles = tiles.length; let completedTiles = 0;
-                progressText.textContent = `Creating ${numThreads} thread(s)...`;
-                let startTime; let timerStarted = false; let hasFailed = false;
-                const isJsScene = benchmarkName === 'javascript';
+            async function runBenchmark(numThreads, samplesPerPixel, TILE_SIZE, MAX_DEPTH, benchmarkName, useDenoiser, debugMode, noiseThreshold, seedLo, seedHi) {
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); progressFill.style.width = '0%';
+    
+   
+    const totalBytes = renderWidth * renderHeight * 4;
+    const masterBuffer = new Uint8Array(totalBytes);
 
-                return new Promise((resolve, reject) => {
-                    let initializedWorkers = 0;
-                    let dispatchStarted = false; 
 
-                    const cleanupAndFail = (errorMessage) => { 
-                        if (hasFailed) return; 
-                        hasFailed = true; 
-                        isBenchmarkRunning = false; 
-                        console.error(errorMessage); 
-                        progressText.textContent = `Error: ${errorMessage}`; 
-                        activeWorkers.forEach(w => { if (w && w.worker) w.worker.terminate(); }); 
-                        activeWorkers = []; 
-                        reject(new Error(errorMessage)); 
-                    };
-                    
-                    function onWorkerMessage(workerObj, e) {
-                        if (!isBenchmarkRunning || hasFailed) return;
-                        const msg = e.data;
-                        switch (msg.type) {
-                            case 'ready': 
-                            case 'scene-initialized': 
-                                if (workerObj.isReady) return;
-                                workerObj.isReady = true;
-                                initializedWorkers++;
-                                progressText.textContent = `Initializing ${initializedWorkers}/${numThreads} thread(s)...`;
-                                if (initializedWorkers === numThreads && !dispatchStarted) {
-                                    dispatchStarted = true; 
-                                    progressText.textContent = `All threads ready. Starting...`;
-                                    if (!timerStarted) {
-                                        startTime = performance.now();
-                                        timerStarted = true;
-                                    }
-                                    activeWorkers.forEach(w => dispatchWork(w));
-                                }
-                                break;
-                            case 'result':
-                                const { pixelData, tile } = msg;
-                                const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
-                                createImageBitmap(imageData).then(imageBitmap => {
-                                    ctx.drawImage(imageBitmap, tile.x, tile.y);
-                                });
-                                completedTiles++; 
-                                const progressPercentage = (completedTiles / totalTiles) * 100;
-                                progressFill.style.width = `${progressPercentage}%`; 
-                                progressText.textContent = `${Math.round(progressPercentage)}%`;
-                                if (completedTiles === totalTiles) {
-                                    const totalTime = (performance.now() - startTime) / 1000;
-                                    activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
-                                    resolve({ time: totalTime });
-                                } else { 
-                                    dispatchWork(workerObj); 
-                                }
-                                break;
-                            case 'error':
-                                cleanupAndFail(`Worker #${workerObj.id} failed: ${msg.error}`);
-                                break;
+    const tiles = [];
+    for (let y = 0; y < renderHeight; y += TILE_SIZE) { 
+        for (let x = 0; x < renderWidth; x += TILE_SIZE) { 
+            tiles.push({ x, y, size: TILE_SIZE }); 
+        } 
+    }
+    let workQueue = [...tiles]; const totalTiles = tiles.length; let completedTiles = 0;
+    progressText.textContent = `Creating ${numThreads} thread(s)...`;
+    let startTime; let timerStarted = false; let hasFailed = false;
+    const isJsScene = benchmarkName === 'javascript';
+
+    return new Promise((resolve, reject) => {
+        let initializedWorkers = 0;
+        let dispatchStarted = false; 
+
+        const cleanupAndFail = (errorMessage) => { 
+            if (hasFailed) return; 
+            hasFailed = true; 
+            isBenchmarkRunning = false; 
+            console.error(errorMessage); 
+            progressText.textContent = `Error: ${errorMessage}`; 
+            activeWorkers.forEach(w => { if (w && w.worker) w.worker.terminate(); }); 
+            activeWorkers = []; 
+            reject(new Error(errorMessage)); 
+        };
+        
+        function onWorkerMessage(workerObj, e) {
+            if (!isBenchmarkRunning || hasFailed) return;
+            const msg = e.data;
+            switch (msg.type) {
+                case 'ready': 
+                case 'scene-initialized': 
+                    if (workerObj.isReady) return;
+                    workerObj.isReady = true;
+                    initializedWorkers++;
+                    progressText.textContent = `Initializing ${initializedWorkers}/${numThreads} thread(s)...`;
+                    if (initializedWorkers === numThreads && !dispatchStarted) {
+                        dispatchStarted = true; 
+                        progressText.textContent = `All threads ready. Starting...`;
+                        if (!timerStarted) {
+                            startTime = performance.now();
+                            timerStarted = true;
                         }
-                    };
+                        activeWorkers.forEach(w => dispatchWork(w));
+                    }
+                    break;
+                case 'result':
+                    const { pixelData, tile } = msg;
+                    
+                 
+                    const tileData = new Uint8Array(pixelData);
+                    for (let row = 0; row < tile.size; row++) {
+                        const srcStart = row * tile.size * 4;
+                        const srcEnd = srcStart + (tile.size * 4);
+                        
+                    
+                        const globalRow = tile.y + row;
+                        if (globalRow >= renderHeight) continue; 
+                        
+                        const destStart = (globalRow * renderWidth * 4) + (tile.x * 4);
+                        
+                      
+                        masterBuffer.set(tileData.subarray(srcStart, srcEnd), destStart);
+                    }
+                
+
+                    const imageData = new ImageData(new Uint8ClampedArray(pixelData), tile.size, tile.size); 
+                    createImageBitmap(imageData).then(imageBitmap => {
+                        ctx.drawImage(imageBitmap, tile.x, tile.y);
+                    });
+                    completedTiles++; 
+                    const progressPercentage = (completedTiles / totalTiles) * 100;
+                    progressFill.style.width = `${progressPercentage}%`; 
+                    progressText.textContent = `${Math.round(progressPercentage)}%`;
+                    
+                    if (completedTiles === totalTiles) {
+                        const totalTime = (performance.now() - startTime) / 1000;
+                        activeWorkers.forEach(w => w.worker.terminate()); activeWorkers = [];
+                        
+                        resolve({ time: totalTime, buffer: masterBuffer });
+                    } else { 
+                        dispatchWork(workerObj); 
+                    }
+                    break;
+                case 'error':
+                    cleanupAndFail(`Worker #${workerObj.id} failed: ${msg.error}`);
+                    break;
+            }
+        };
 
                     function dispatchWork(workerObj) { 
                         if (workQueue.length > 0) { 
@@ -513,7 +923,8 @@
                                 useDenoiser: useDenoiser,         
                                 debugMode: debugMode,             
                                 noiseThreshold: noiseThreshold,   
-                                challengeSeed: challengeSeed      
+                                challengeSeedLo: seedLo, 
+                                challengeSeedHi: seedHi  
                             };
                             workerObj.worker.postMessage(message); 
                         } 
@@ -555,7 +966,7 @@
                     return;
                 }
 
-                // 1. CAPTCHA FOR START
+               
                 let startToken = turnstile.getResponse();
                 if (!startToken) {
                     statusDiv.textContent = "Please solve the CAPTCHA to start.";
@@ -579,11 +990,11 @@
                     
                     const data = await res.json();
                     
-                     // --- RATE LIMIT HANDLING ---
+                     
                     if (res.status === 429) {
                         turnstile.reset();
                         
-                        // VISUAL FEEDBACK ON BUTTON
+                       
                         const btn = document.getElementById('startMultiButton');
                         const oldText = btn.textContent;
                         btn.textContent = "Cooldown...";
@@ -593,11 +1004,10 @@
                             if (!isBenchmarkRunning) btn.disabled = false;
                         }, 3000);
 
-                        // CRITICAL FIX: Pass the server message ("Please wait 15s...") 
-                        // directly to the error, so the catch block displays it.
+                        
                         throw new Error("🛑 " + data.message); 
                     }
-                    // -------------------------------
+                    
 
                     if (!res.ok) {
                         if (data.error === "CAPTCHA_FAILED" || data.error === "CAPTCHA_MISSING") {
@@ -610,11 +1020,12 @@
                         throw new Error(data.error || "Server connection failed");
                     }
 
-                    // Reset CAPTCHA immediately after successful start (Token consumed)
+                   
                     turnstile.reset();
 
                     const currentToken = data.token;
-                    const seedForWorkers = seedStringToInt(data.seed); 
+                    
+                    const [seedLo, seedHi] = hashStringTo64Bit(data.seed);
                     
                     await prepareWasm(scene);
                     
@@ -627,21 +1038,20 @@
                         currentRenderSettings.denoiser, 
                         0, 
                         currentRenderSettings.noiseThreshold, 
-                        seedForWorkers 
+                        seedLo,
+                        seedHi  
                     );
-
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
+					scaleResultText(); 
                     progressText.textContent = 'Render Done. Uploading...';
                     
-                    // --- REMOVED 2ND CAPTCHA LOGIC ---
-                    // No waiting for getFreshTurnstileToken(statusDiv);
+                  
                     
                     statusDiv.textContent = "Validating & Uploading...";
                     statusDiv.style.color = "#ff9800"; 
 
                     const ctx = canvas.getContext('2d');
-                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const hash = await cryptoHash(imgData.data);
+                    const hash = await cryptoHash(result.buffer);
                     
                     const payload = {
                         token: currentToken,
@@ -650,30 +1060,51 @@
                         threads: parseInt(threadInput.value, 10) || 1
                     };
 
-                    // Send immediately without X-Turnstile-Token header
+                    
                     const subRes = await fetch(`${backendUrl}/api/submit`, {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json'
-                            // REMOVED: 'X-Turnstile-Token': submitToken
+                           
                         },
                         body: JSON.stringify(payload)
                     });
 
                     const subJson = await subRes.json();
- // FIX FOR SUBMIT RATE LIMIT
+
                     if (subRes.status === 429) {
-                         statusDiv.textContent = "🛑 " + subJson.message; // "Please wait 5s..."
+                         statusDiv.textContent = "🛑 " + subJson.message; 
                          statusDiv.style.color = "#d93025";
-                         return; // Don't throw here, just stop updating UI
+                         return; 
                     }
                     if (subRes.ok) {
-                        statusDiv.textContent = `Success! Official Score: ${(subJson.server_score / 1000).toFixed(3)}s`;
-                        statusDiv.style.color = "#28a745"; 
-                        targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s (Server)`;
-                        fetchLeaderboard();
-                    } else {
-                        // If submit captcha failed (rare, but possible)
+ statusDiv.textContent = `Submitted to Pending List! Time: ${(subJson.server_score / 1000).toFixed(3)}s`;
+    statusDiv.style.color = "#ff9800"; 
+
+  
+    targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s`;
+    
+ 
+    targetTimeEl.style.cssText = ''; 
+    if (targetTimeEl.parentElement) targetTimeEl.parentElement.style.cssText = '';
+
+
+    if (!isPendingView) {
+        isPendingView = true;
+        lbToggle.classList.remove('verified-mode');
+        lbToggle.classList.add('pending-mode');
+        lblVerified.classList.remove('active');
+        lblPending.classList.add('active');
+        viewVerified.classList.remove('active-view');
+        viewPending.classList.add('active-view');
+    }
+    document.getElementById('leaderboard-section').scrollIntoView({ behavior: 'smooth' });
+
+
+    scaleResultText();
+    fetchLeaderboard();
+} else {
+                       
                         if (subJson.error === "CAPTCHA_FAILED") {
                             turnstile.reset();
                             statusDiv.textContent = "Submit CAPTCHA failed. Please try running again.";
@@ -689,7 +1120,7 @@
                    statusDiv.textContent = error.message;
                    statusDiv.style.color = "#d93025";
                 } finally {
-                    turnstile.reset(); // Always reset at end
+                    turnstile.reset(); 
                     if (isBenchmarkRunning) {
                         isBenchmarkRunning = false;
                         document.getElementById('startMultiButton').disabled = false;
@@ -699,54 +1130,7 @@
                 }
             }
 
-            // LOOP MODE (Local Only - No Submit Token needed)
-            document.getElementById('startLoopButton').addEventListener('click', async () => {
-                const iterations = parseInt(document.getElementById('loopIterations').value) || 1;
-                let loopResults = [];
-                const loopOutput = document.getElementById('loopOutput');
-                loopOutput.value = "Starting loop...";
-                
-                if (!currentRenderSettings) {
-                    await fetchSceneSettings();
-                    if (!currentRenderSettings) return;
-                }
-                isBenchmarkRunning = true;
-                try {
-                    for (let i = 0; i < iterations; i++) {
-                        const seed = generateRandomString(64);
-                        document.getElementById('seedInput').value = seed;
-                        const seedInt = seedStringToInt(seed);
-                        progressText.textContent = `Loop ${i+1}/${iterations} (Seed: ${seed})`;
-
-                        await prepareWasm(sceneSelector.value);
-                        
-                        await runBenchmark(
-                            parseInt(threadInput.value) || 4,
-                            currentRenderSettings.samples,
-                            currentRenderSettings.tileSize,
-                            currentRenderSettings.maxDepth,
-                            sceneSelector.value,
-                            currentRenderSettings.denoiser,
-                            0, 
-                            currentRenderSettings.noiseThreshold,
-                            seedInt
-                        );
-
-                        const ctx = canvas.getContext('2d');
-                        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        const hash = await cryptoHash(imgData.data);
-                        
-                        loopResults.push({ seed: seed, hash: hash, scene: sceneSelector.value });
-                        loopOutput.value = JSON.stringify(loopResults, null, 2);
-                    }
-                    document.getElementById('uploadToDbButton').style.display = 'inline-block';
-                    progressText.textContent = "Loop Complete.";
-                } catch(e) {
-                    loopOutput.value += "\nError: " + e.message;
-                } finally {
-                    isBenchmarkRunning = false;
-                }
-            });
+            
 
             async function fetchSceneSettings() {
 			fetchLeaderboard();
@@ -758,7 +1142,7 @@
                     const res = await fetch(`${backendUrl}/api/settings?scene=${scene}`);
                     if (!res.ok) throw new Error("Failed to load settings");
                     currentRenderSettings = await res.json();
-                    display.innerHTML = `Target: ${currentRenderSettings.resolution} | Samples: ${currentRenderSettings.samples}<br>Bounces: ${currentRenderSettings.maxDepth} | Tile: ${currentRenderSettings.tileSize}px`;
+                    display.innerHTML = `Target: ${currentRenderSettings.resolution} | Samples: ${currentRenderSettings.samples}<br>Ray Bounces: ${currentRenderSettings.maxDepth} | Tile Size: ${currentRenderSettings.tileSize}px`;
                     const [w, h] = currentRenderSettings.resolution.split('x').map(Number);
                     canvas.width = w; canvas.height = h; renderWidth = w; renderHeight = h;
                     document.getElementById('startMultiButton').disabled = false;
@@ -770,78 +1154,43 @@
             sceneSelector.addEventListener('change', fetchSceneSettings);
             fetchSceneSettings(); 
 
-            document.getElementById('uploadToDbButton').addEventListener('click', async () => {
-                const loopOutput = document.getElementById('loopOutput');
-                const loopResults = JSON.parse(loopOutput.value || "[]");
-                if(loopResults.length === 0) return;
-                
-                const secret = prompt("Enter Admin Secret:");
-                if(!secret) return;
-
-                // ADMIN CAPTCHA
-                turnstile.reset();
-                const statusDiv = document.getElementById('submissionStatus');
-                statusDiv.textContent = "Please solve CAPTCHA to upload DB.";
-                
-                const token = await getFreshTurnstileToken(statusDiv);
-
-                loopOutput.value = "Uploading...";
-                try {
-                    const res = await fetch(`${backendUrl}/admin/populate`, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'X-Admin-Secret': secret,
-                            'X-Turnstile-Token': token
-                        },
-                        body: JSON.stringify(loopResults)
-                    });
-                    const json = await res.json();
-                    
-                    if (!res.ok && json.error === "CAPTCHA_FAILED") {
-                         turnstile.reset();
-                         loopOutput.value = "Upload failed: CAPTCHA Invalid.";
-                    } else {
-                         loopOutput.value = "Upload Result:\n" + JSON.stringify(json, null, 2);
-                         turnstile.reset();
-                    }
-                } catch(e) {
-                    loopOutput.value = "Error:\n" + e.message;
-                }
-            });
+            
 
             async function fetchLeaderboard() {
-                const tbody = document.getElementById('leaderboardBody');
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Loading...</td></tr>';
-                try {
-                    const sceneId = sceneSelector.value;
-                    const friendlyName = sceneDisplayNames[sceneId] || sceneId;
-                    document.getElementById('leaderboardSceneName').textContent = friendlyName;
-                    const res = await fetch(`${backendUrl}/api/leaderboard?scene=${sceneId}`);
-                    const data = await res.json();
-                    tbody.innerHTML = '';
-                    if (data.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No scores yet.</td></tr>';
-                        return;
+                const sceneId = sceneSelector.value;
+                const friendlyName = sceneDisplayNames[sceneId] || sceneId;
+                document.getElementById('leaderboardSceneName').textContent = friendlyName;
+                
+            
+                async function populateTable(type, elementId) {
+                    const tbody = document.getElementById(elementId);
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
+                    try {
+                        const res = await fetch(`${backendUrl}/api/leaderboard?scene=${sceneId}&type=${type}`);
+                        const data = await res.json();
+                        tbody.innerHTML = '';
+                        if (data.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No entries.</td></tr>';
+                            return;
+                        }
+                        data.forEach((row, index) => {
+                            const tr = document.createElement('tr');
+                            tr.style.borderBottom = "1px solid #444";
+                            const rankTd = document.createElement('td'); rankTd.style.padding = "8px"; rankTd.style.textAlign = "center"; rankTd.textContent = index + 1;
+                            const userTd = document.createElement('td'); userTd.style.padding = "8px"; userTd.style.textAlign = "center"; userTd.style.fontWeight = "bold"; userTd.style.color = "#fff"; userTd.textContent = row.username; 
+                            const threadTd = document.createElement('td'); threadTd.style.padding = "8px"; threadTd.style.textAlign = "center"; threadTd.style.color = "#aaa"; threadTd.textContent = row.threads || "-"; 
+                            const timeTd = document.createElement('td'); timeTd.style.padding = "8px"; timeTd.style.textAlign = "center"; timeTd.style.color = "#28a745"; timeTd.textContent = (row.score_ms / 1000).toFixed(3) + "s";
+                            const dateTd = document.createElement('td'); dateTd.style.padding = "8px"; dateTd.style.textAlign = "center"; dateTd.style.color = "#aaa"; dateTd.style.fontSize = "0.8em"; dateTd.textContent = new Date(row.timestamp).toLocaleDateString();
+                            tr.appendChild(rankTd); tr.appendChild(userTd); tr.appendChild(threadTd); tr.appendChild(timeTd); tr.appendChild(dateTd);
+                            tbody.appendChild(tr);
+                        });
+                    } catch (e) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:red;">Failed to load.</td></tr>';
                     }
-                    data.forEach((row, index) => {
-                        const tr = document.createElement('tr');
-                        tr.style.borderBottom = "1px solid #444";
-                        const rankTd = document.createElement('td'); rankTd.style.padding = "8px"; rankTd.style.textAlign = "center"; rankTd.textContent = index + 1;
-                        const userTd = document.createElement('td'); userTd.style.padding = "8px"; userTd.style.textAlign = "center"; userTd.style.fontWeight = "bold"; userTd.style.color = "#fff"; userTd.textContent = row.username; 
-                        
-                        const threadTd = document.createElement('td'); 
-                        threadTd.style.padding = "8px"; threadTd.style.textAlign = "center"; threadTd.style.color = "#aaa"; 
-                        threadTd.textContent = row.threads || "-"; 
-
-                        const timeTd = document.createElement('td'); timeTd.style.padding = "8px"; timeTd.style.textAlign = "center"; timeTd.style.color = "#28a745"; timeTd.textContent = (row.score_ms / 1000).toFixed(3) + "s";
-                        const dateTd = document.createElement('td'); dateTd.style.padding = "8px"; dateTd.style.textAlign = "center"; dateTd.style.color = "#aaa"; dateTd.style.fontSize = "0.8em"; dateTd.textContent = new Date(row.timestamp).toLocaleDateString();
-                        tr.appendChild(rankTd); tr.appendChild(userTd); tr.appendChild(threadTd); tr.appendChild(timeTd); tr.appendChild(dateTd);
-                        tbody.appendChild(tr);
-                    });
-                } catch (e) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:red;">Failed to load.</td></tr>';
                 }
+
+                await populateTable('verified', 'leaderboardBody');
+                await populateTable('pending', 'pendingBody');
             }
 
             document.getElementById('refreshLeaderboard').addEventListener('click', fetchLeaderboard);
@@ -855,6 +1204,148 @@
                 }
                 startBenchmark(numThreads, multiThreadTimeEl);
             });
+			
+			
+            document.getElementById('verifyPendingButton').addEventListener('click', async () => {
+                const secret = prompt("Enter Admin Secret to START verification loop:");
+                if (!secret) return;
+
+                const loopOutput = document.getElementById('loopOutput');
+                
+                
+                const log = (msg) => {
+                    const timestamp = new Date().toLocaleTimeString();
+                    const newEntry = `[${timestamp}] ${msg}\n`;
+                    
+                 
+                    loopOutput.value = newEntry + loopOutput.value;
+
+                
+                    if (loopOutput.value.length > 20000) {
+                        loopOutput.value = loopOutput.value.substring(0, 20000) + "\n...[Truncated]...";
+                    }
+                };
+
+                log("--- Starting Verification Session ---");
+                isBenchmarkRunning = true;
+
+                try {
+                    
+                    log("Fetching pending entries...");
+                    const listRes = await fetch(`${backendUrl}/admin/pending`, {
+                        headers: { 'X-Admin-Secret': secret }
+                    });
+                    
+                    if (!listRes.ok) throw new Error("Auth failed or server error.");
+                    const entries = await listRes.json();
+                    
+                    if (entries.length === 0) {
+                        log("No pending entries found.");
+                        alert("Pending list is empty.");
+                        return;
+                    }
+
+                    log(`Found ${entries.length} entries. Starting render loop...`);
+
+                
+                    for (let i = 0; i < entries.length; i++) {
+                        const entry = entries[i];
+                        log(`\nVerifying ID ${entry.id} (${entry.username})...`);
+                        log(`Scene: ${entry.scene} | Seed (Raw): ${entry.seed}`);
+
+                      
+                        await prepareWasm(entry.scene);
+                        
+                     
+                        const settingsRes = await fetch(`${backendUrl}/api/settings?scene=${entry.scene}`);
+                        const settings = await settingsRes.json();
+
+                       
+                        const [seedLo, seedHi] = hashStringTo64Bit(entry.seed.toString());
+                        log(`Processed Seed: [Lo: ${seedLo}, Hi: ${seedHi}] (64-bit)`);
+
+                      
+                        const result = await runBenchmark(
+                            12,
+                            settings.samples,
+                            settings.tileSize,
+                            settings.maxDepth,
+                            entry.scene,
+                            settings.denoiser,
+                            0, 
+                            settings.noiseThreshold,
+                            seedLo,
+                            seedHi 
+                        );
+
+                        const calculatedHash = await cryptoHash(result.buffer);
+
+                        log(`Render Time: ${result.time.toFixed(2)}s`);
+                        log(`Client Hash:   ${entry.client_hash.substring(0, 15)}...`);
+                        log(`Verified Hash: ${calculatedHash.substring(0, 15)}...`);
+
+                     
+                        let decision = 'reject';
+                        if (calculatedHash === entry.client_hash) {
+                            decision = 'approve';
+                            log("✅ MATCH! Approving...");
+                        } else {
+                            log("❌ MISMATCH! Rejecting...");
+                        }
+
+                        
+                        const finRes = await fetch(`${backendUrl}/admin/finalize`, {
+                            method: 'POST',
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'X-Admin-Secret': secret 
+                            },
+                            body: JSON.stringify({ id: entry.id, decision: decision })
+                        });
+                        
+                        const finJson = await finRes.json();
+                        if (finRes.ok) {
+                            log(`Server response: ${finJson.status}`);
+                        } else {
+                            log(`Server Error: ${finJson.error}`);
+                        }
+                    }
+
+                    log("\n--- Verification Batch Complete ---");
+                    fetchLeaderboard();
+
+                } catch (e) {
+                    log(`CRITICAL ERROR: ${e.message}`);
+                    console.error(e);
+                } finally {
+                    isBenchmarkRunning = false;
+                }
+            });
+			lbToggle.addEventListener('click', () => {
+    isPendingView = !isPendingView; 
+
+    if (isPendingView) {
+       
+        lbToggle.classList.remove('verified-mode');
+        lbToggle.classList.add('pending-mode');
+        
+        lblVerified.classList.remove('active');
+        lblPending.classList.add('active');
+
+        viewVerified.classList.remove('active-view');
+        viewPending.classList.add('active-view');
+    } else {
+        
+        lbToggle.classList.remove('pending-mode');
+        lbToggle.classList.add('verified-mode');
+
+        lblPending.classList.remove('active');
+        lblVerified.classList.add('active');
+
+        viewPending.classList.remove('active-view');
+        viewVerified.classList.add('active-view');
+    }
+});
         })();
     </script>
 </body>
