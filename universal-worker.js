@@ -5,6 +5,17 @@ var wasmInstance = null;
 var wasm_renderTile = null;
 var wasm_freeFunc = null;
 var wasm_initializeScene = null;
+function hashStringTo64Bit(str) {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0, ch; i < str.length; i++) {
+        ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return [(h1 >>> 0), (h2 >>> 0)]; 
+}
 function getHeapU8(mod) { if (!mod) { if (typeof HEAPU8 !== 'undefined') return HEAPU8; return null; } if (mod.HEAPU8) return mod.HEAPU8; if (mod.asm && mod.asm.HEAPU8) return mod.asm.HEAPU8; if (typeof HEAPU8 !== 'undefined') return HEAPU8; return null; }
 function onWasmModuleReady(m) {
     wasmInstance = m || Module;
@@ -22,8 +33,12 @@ function onWasmModuleReady(m) {
     } else {
       
         console.log('Wrapping modern render_tile function.');
-        // MODIFICATION: Added 'number' at the end of the array for challengeSeed
-        wasm_renderTile_modern = wasmInstance.cwrap('render_tile', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'boolean', 'number', 'number', 'number']);
+       
+wasm_renderTile_modern = wasmInstance.cwrap('render_tile', 'number', [
+    'number', 'number', 'number', 'number', 'number', 
+    'number', 'number', 'boolean', 'number', 'number', 
+    'number', 'number'
+]);
     }
     
     self.postMessage({ type: 'ready' });
@@ -51,46 +66,52 @@ function initializeWasm(data) {
     } catch (err) { console.warn('factory invocation attempt failed', err); }
 }
 function renderWasmTile(data) {
-    // ADD challengeSeed HERE vvv
-const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, debugMode, noiseThreshold, challengeSeed } = data;
+ 
+const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, debugMode, noiseThreshold, challengeSeedLo, challengeSeedHi } = data;
     let pixelDataPtr = 0;
-    
+
     try {
         if (isLegacyScene) {
-            
             if (!wasm_renderTile_legacy) { self.postMessage({type: 'error', error: 'Legacy WASM renderer not ready'}); return; }
-        
+            
             pixelDataPtr = wasm_renderTile_legacy(tile.x, tile.y, tile.size, canvasWidth, canvasHeight, "", samplesPerPixel, maxDepth, useDenoiser);
         } else {
-          
             if (!wasm_renderTile_modern) { self.postMessage({type: 'error', error: 'Modern WASM renderer not ready'}); return; }
+            
+            
             pixelDataPtr = wasm_renderTile_modern(
-    tile.x, 
-    tile.y, 
-    tile.size, 
-    canvasWidth, 
-    canvasHeight, 
-    samplesPerPixel, 
-    maxDepth, 
-    useDenoiser, 
-    debugMode, 
-    noiseThreshold,
-    challengeSeed // <--- ADD THIS
-);
+                tile.x, 
+                tile.y, 
+                tile.size, 
+                canvasWidth, 
+                canvasHeight, 
+                samplesPerPixel, 
+                maxDepth, 
+                useDenoiser, 
+                debugMode, 
+                noiseThreshold,
+                challengeSeedLo, 
+                challengeSeedHi  
+            );
         }
     } catch (err) { 
         console.error('renderTile call failed', err); 
         self.postMessage({type: 'error', error: 'WASM render_tile execution failed. ' + err});
         return; 
     }
+
     if (!pixelDataPtr) { console.error('renderTile returned null/0 pointer'); return; }
+    
     const heap = getHeapU8(wasmInstance);
     if (!heap || !heap.buffer) { console.error('HEAPU8 not available after render'); return; }
+    
     const byteLength = tile.size * tile.size * 4;
     const view = new Uint8ClampedArray(heap.buffer, pixelDataPtr, byteLength);
     const copied = new Uint8ClampedArray(byteLength);
     copied.set(view);
+    
     if (wasm_freeFunc) { try { wasm_freeFunc(pixelDataPtr); } catch (err) { console.warn('free attempt failed', err); } }
+    
     try { self.postMessage({ type: 'result', pixelData: copied, tile }, [copied.buffer]); } catch (err) { self.postMessage({ type: 'result', pixelData: copied.slice(), tile }, []); }
 }
 const V = {
@@ -662,7 +683,7 @@ function generateDemandingScene() {
     return scene;
 }
 function renderJsTile(data) {
-    // MODIFICATION: Added challengeSeed to destructuring
+    
     const { tile, canvasWidth, canvasHeight, samplesPerPixel, maxDepth, useDenoiser, challengeSeed } = data;
     const scene = js_scene;
     if (!scene) { self.postMessage({ type: 'error', error: 'JS Scene not initialized before render call.'}); return; }
@@ -675,7 +696,7 @@ function renderJsTile(data) {
         const y = tile.y + yOffset;
         for (let xOffset = 0; xOffset < tile.size; xOffset++) {
             const x = tile.x + xOffset;
-            // MODIFICATION: Pass challengeSeed to PRNG reset
+           
             resetPrngForTile(x, y, canvasWidth, challengeSeed);
             totalColor.r=totalColor.g=totalColor.b=0;
             if(useDenoiser){totalAlbedo.r=totalAlbedo.g=totalAlbedo.b=0;totalNormal.x=totalNormal.y=totalNormal.z=0}
