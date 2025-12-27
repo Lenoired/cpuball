@@ -530,9 +530,11 @@
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
                         <!-- <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option> -->
-                        <option value="simple" selected>Staircase (fastest, more advanced, WASM)</option>
+                        <option value="simple_hq" selected>Staircase (High 1080p, WASM)</option> 
+						<option value="simple">Staircase (Low 900p, WASM)</option>
                         <!-- <option value="v3">Spheres v3 (slow, realistic, WASM)</option> -->
                         <!-- <option value="javascript">Spheres JS (inefficient, JavaScript)</option> -->
+						
                     </select>
                 </div>
                 <div class="control-group">
@@ -694,12 +696,13 @@ let isPendingView = false;
             const progressFill = document.getElementById('progressFill');
             const progressText = document.getElementById('progressText');
             const sceneSelector = document.getElementById('sceneSelector');
-            const backendUrl = ""; 
+            const backendUrl = "https://monolith-backend.doxstress.workers.dev"; 
 
             const sceneDisplayNames = {
                 'gaussv2': 'Caustic Hell v2',
                 'gauss': 'Caustic Hell Legacy',
-                'simple': 'Staircase',
+                'simple': 'Staircase (900p)',
+				'simple_hq': 'Staircase (1080p)',
                 'v3': 'Spheres v3',
                 'v2': 'Spheres v2',
                 'old': 'Spheres v1',
@@ -793,6 +796,9 @@ window.addEventListener('resize', scaleResultText);
 
             async function prepareWasm(benchmarkName) {
                 if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
+				// MAP 'simple_hq' TO 'simple' FILES
+    let fileName = benchmarkName;
+    if (benchmarkName === 'simple_hq') fileName = 'simple';
                 try {
                     const wasmResponse = await fetch(`${basePath}/raytracer_${benchmarkName}.wasm`);
                     if (!wasmResponse.ok) throw new Error(`Failed to fetch WASM file: ${wasmResponse.statusText}`);
@@ -940,9 +946,13 @@ window.addEventListener('resize', scaleResultText);
                             if (isJsScene) {
                                 worker.postMessage({ type: 'init-scene', scene: 'cornell' });
                             } else {
+							 // NEW: Handle the filename mapping here too
+        let fileName = benchmarkName;
+        if (benchmarkName === 'simple_hq') fileName = 'simple';
                                 const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
                                 const wasmModule = wasmBinaries[benchmarkName];
-                                const isLegacy = legacyScenes.includes(benchmarkName);
+                                // Use 'fileName' to check for legacy, not the raw benchmarkName
+        const isLegacy = legacyScenes.includes(fileName); 
                                 worker.postMessage({ type: 'init-wasm', wasmModule: wasmModule, jsUrl: jsUrl, isLegacy: isLegacy });
                             }
                         } catch (error) {
@@ -1259,7 +1269,11 @@ window.addEventListener('resize', scaleResultText);
                      
                         const settingsRes = await fetch(`${backendUrl}/api/settings?scene=${entry.scene}`);
                         const settings = await settingsRes.json();
-
+const [w, h] = settings.resolution.split('x').map(Number);
+canvas.width = w; 
+canvas.height = h; 
+renderWidth = w;   
+renderHeight = h;  
                        
                         const [seedLo, seedHi] = hashStringTo64Bit(entry.seed.toString());
                         log(`Processed Seed: [Lo: ${seedLo}, Hi: ${seedHi}] (64-bit)`);
