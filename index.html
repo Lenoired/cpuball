@@ -600,7 +600,7 @@
 </div>
 
         <div id="leaderboard-section" style="margin-top: 2rem; width:100%; text-align: center;">
-    <h3>Leaderboard <span id="leaderboardSceneName">simple_hq</span></h3>
+    <h3>Leaderboard <span id="leaderboardSceneName">gaussv2</span></h3>
     
     <div class="leaderboard-controls">
         
@@ -949,7 +949,8 @@ window.addEventListener('resize', scaleResultText);
 							 // NEW: Handle the filename mapping here too
         let fileName = benchmarkName;
         if (benchmarkName === 'simple_hq') fileName = 'simple';
-                                const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
+                                // FIX: Use 'fileName' (the mapped name) instead of 'benchmarkName'
+                            const jsUrl = `${basePath}/raytracer_${fileName}.js`;
                                 const wasmModule = wasmBinaries[benchmarkName];
                                 // Use 'fileName' to check for legacy, not the raw benchmarkName
         const isLegacy = legacyScenes.includes(fileName); 
