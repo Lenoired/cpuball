@@ -944,7 +944,7 @@ window.addEventListener('resize', scaleResultText);
                             if (isJsScene) {
                                 worker.postMessage({ type: 'init-scene', scene: 'cornell' });
                             } else {
-							
+							 
                                 // FIX: Use 'fileName' (the mapped name) instead of 'benchmarkName'
                             const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
                                 const wasmModule = wasmBinaries[benchmarkName];
@@ -1168,36 +1168,92 @@ window.addEventListener('resize', scaleResultText);
                 const friendlyName = sceneDisplayNames[sceneId] || sceneId;
                 document.getElementById('leaderboardSceneName').textContent = friendlyName;
                 
-            
-                async function populateTable(type, elementId) {
-                    const tbody = document.getElementById(elementId);
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
-                    try {
-                        const res = await fetch(`${backendUrl}/api/leaderboard?scene=${sceneId}&type=${type}`);
-                        const data = await res.json();
-                        tbody.innerHTML = '';
-                        if (data.length === 0) {
+                const verifiedBody = document.getElementById('leaderboardBody');
+                const pendingBody = document.getElementById('pendingBody');
+
+                // Set loading state
+                verifiedBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
+                pendingBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
+
+                try {
+                    // 1. Fetch ALL data (Pending + Verified) in one request
+                    const res = await fetch(`${backendUrl}/api/leaderboard?scene=${sceneId}`);
+                    const data = await res.json();
+                    
+                    // Clear loading state
+                    verifiedBody.innerHTML = '';
+                    pendingBody.innerHTML = '';
+
+                    if (!data || data.length === 0) {
+                         const emptyRow = '<tr><td colspan="5" style="text-align:center;">No entries.</td></tr>';
+                         verifiedBody.innerHTML = emptyRow;
+                         pendingBody.innerHTML = emptyRow;
+                         return;
+                    }
+
+                    // 2. Client-side Split
+                    const verifiedEntries = data.filter(r => r.status === 'verified');
+                    const pendingEntries = data.filter(r => r.status === 'pending');
+
+                    // 3. Helper to render rows
+                    const renderRows = (entries, tbody) => {
+                        if (entries.length === 0) {
                             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No entries.</td></tr>';
                             return;
                         }
-                        data.forEach((row, index) => {
+                        // Sort by score (asc) just to be safe, though DB does it too
+                        entries.sort((a,b) => a.score_ms - b.score_ms);
+
+                        entries.forEach((row, index) => {
                             const tr = document.createElement('tr');
                             tr.style.borderBottom = "1px solid #444";
-                            const rankTd = document.createElement('td'); rankTd.style.padding = "8px"; rankTd.style.textAlign = "center"; rankTd.textContent = index + 1;
-                            const userTd = document.createElement('td'); userTd.style.padding = "8px"; userTd.style.textAlign = "center"; userTd.style.fontWeight = "bold"; userTd.style.color = "#fff"; userTd.textContent = row.username; 
-                            const threadTd = document.createElement('td'); threadTd.style.padding = "8px"; threadTd.style.textAlign = "center"; threadTd.style.color = "#aaa"; threadTd.textContent = row.threads || "-"; 
-                            const timeTd = document.createElement('td'); timeTd.style.padding = "8px"; timeTd.style.textAlign = "center"; timeTd.style.color = "#28a745"; timeTd.textContent = (row.score_ms / 1000).toFixed(3) + "s";
-                            const dateTd = document.createElement('td'); dateTd.style.padding = "8px"; dateTd.style.textAlign = "center"; dateTd.style.color = "#aaa"; dateTd.style.fontSize = "0.8em"; dateTd.textContent = new Date(row.timestamp).toLocaleDateString();
+                            
+                            const rankTd = document.createElement('td'); 
+                            rankTd.style.padding = "8px"; 
+                            rankTd.style.textAlign = "center"; 
+                            rankTd.textContent = index + 1;
+
+                            const userTd = document.createElement('td'); 
+                            userTd.style.padding = "8px"; 
+                            userTd.style.textAlign = "center"; 
+                            userTd.style.fontWeight = "bold"; 
+                            userTd.style.color = "#fff"; 
+                            userTd.textContent = row.username; 
+                            
+                            const threadTd = document.createElement('td'); 
+                            threadTd.style.padding = "8px"; 
+                            threadTd.style.textAlign = "center"; 
+                            threadTd.style.color = "#aaa"; 
+                            threadTd.textContent = row.threads || "-"; 
+                            
+                            const timeTd = document.createElement('td'); 
+                            timeTd.style.padding = "8px"; 
+                            timeTd.style.textAlign = "center"; 
+                            timeTd.style.color = "#28a745"; 
+                            timeTd.textContent = (row.score_ms / 1000).toFixed(3) + "s";
+                            
+                            const dateTd = document.createElement('td'); 
+                            dateTd.style.padding = "8px"; 
+                            dateTd.style.textAlign = "center"; 
+                            dateTd.style.color = "#aaa"; 
+                            dateTd.style.fontSize = "0.8em"; 
+                            dateTd.textContent = new Date(row.timestamp).toLocaleDateString();
+                            
                             tr.appendChild(rankTd); tr.appendChild(userTd); tr.appendChild(threadTd); tr.appendChild(timeTd); tr.appendChild(dateTd);
                             tbody.appendChild(tr);
                         });
-                    } catch (e) {
-                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:red;">Failed to load.</td></tr>';
-                    }
-                }
+                    };
 
-                await populateTable('verified', 'leaderboardBody');
-                await populateTable('pending', 'pendingBody');
+                    // 4. Populate Tables
+                    renderRows(verifiedEntries, verifiedBody);
+                    renderRows(pendingEntries, pendingBody);
+
+                } catch (e) {
+                    console.error(e);
+                    const errRow = '<tr><td colspan="5" style="text-align:center; color:red;">Failed to load.</td></tr>';
+                    verifiedBody.innerHTML = errRow;
+                    pendingBody.innerHTML = errRow;
+                }
             }
 
             document.getElementById('refreshLeaderboard').addEventListener('click', fetchLeaderboard);
