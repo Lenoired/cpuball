@@ -946,10 +946,10 @@ window.addEventListener('resize', scaleResultText);
                             } else {
 							
                                 // FIX: Use 'fileName' (the mapped name) instead of 'benchmarkName'
-                            const jsUrl = `${basePath}/raytracer_${fileName}.js`;
+                            const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
                                 const wasmModule = wasmBinaries[benchmarkName];
                                 // Use 'fileName' to check for legacy, not the raw benchmarkName
-        const isLegacy = legacyScenes.includes(fileName); 
+        const isLegacy = legacyScenes.includes(benchmarkName); 
                                 worker.postMessage({ type: 'init-wasm', wasmModule: wasmModule, jsUrl: jsUrl, isLegacy: isLegacy });
                             }
                         } catch (error) {
