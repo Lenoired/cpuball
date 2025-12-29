@@ -530,7 +530,8 @@
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
                         <!-- <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option> -->
-                        <option value="simple_hq" selected>Staircase (High 1080p, WASM)</option> 
+                        <option value="simple_ex" selected>Staircase (Extreme 1080p Optimized, WASM)</option> 
+						<option value="simple_hq">Staircase (High 1080p, WASM)</option> 
 						<option value="simple">Staircase (Low 900p, WASM)</option>
                         <!-- <option value="v3">Spheres v3 (slow, realistic, WASM)</option> -->
                         <!-- <option value="javascript">Spheres JS (inefficient, JavaScript)</option> -->
@@ -703,6 +704,7 @@ let isPendingView = false;
                 'gauss': 'Caustic Hell Legacy',
                 'simple': 'Staircase (900p)',
 				'simple_hq': 'Staircase (1080p)',
+				'simple_ex': 'Staircase Extreme (1080p)',
                 'v3': 'Spheres v3',
                 'v2': 'Spheres v2',
                 'old': 'Spheres v1',
@@ -1096,16 +1098,22 @@ window.addEventListener('resize', scaleResultText);
     if (targetTimeEl.parentElement) targetTimeEl.parentElement.style.cssText = '';
 
 
-    if (!isPendingView) {
-        isPendingView = true;
-        lbToggle.classList.remove('verified-mode');
-        lbToggle.classList.add('pending-mode');
-        lblVerified.classList.remove('active');
-        lblPending.classList.add('active');
-        viewVerified.classList.remove('active-view');
-        viewPending.classList.add('active-view');
-    }
-    document.getElementById('leaderboard-section').scrollIntoView({ behavior: 'smooth' });
+    // --- NEW: Switch UI to Pending Mode Automatically ---
+                        if (!isPendingView) {
+                            isPendingView = true;
+                            // Visual Toggle State
+                            lbToggle.classList.remove('verified-mode');
+                            lbToggle.classList.add('pending-mode');
+                            // Label Colors
+                            lblVerified.classList.remove('active');
+                            lblPending.classList.add('active');
+                            // View Visibility
+                            viewVerified.classList.remove('active-view');
+                            viewPending.classList.add('active-view');
+                        }
+
+                        // --- NEW: Slide down to Leaderboard ---
+                        document.getElementById('leaderboard-section').scrollIntoView({ behavior: 'smooth' });
 
 
     scaleResultText();
