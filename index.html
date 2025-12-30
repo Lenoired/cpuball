@@ -995,7 +995,8 @@ window.addEventListener('resize', scaleResultText);
                     const scene = sceneSelector.value;
                     const res = await fetch(`${backendUrl}/api/start?scene=${scene}`, {
 					    method: 'POST',
-                        headers: { 'X-Turnstile-Token': startToken }
+                        headers: { 'X-Turnstile-Token': startToken },
+						cache: 'no-store'
                     });
                     
                     const data = await res.json();
