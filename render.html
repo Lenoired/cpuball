@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Path Tracer Verification Suite (Kahan + Block Sum)</title>
+    <style>
+        :root { --bg: #050505; --panel: #111; --text: #ccc; --accent: #00ff00; --err: #ff4444; }
+        body, html { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* LAYOUT GRID */
+        #app-container {
+            display: grid;
+            grid-template-rows: min-content min-content 1fr;
+            height: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* 1. TOP: CANVAS (Visual Only) */
+        #canvas-wrapper {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 2px solid #333;
+        }
+        canvas {
+            width: 100%;
+            max-width: 400px; /* Intrinsic render resolution */
+            aspect-ratio: 1/1;
+            box-shadow: 0 0 20px rgba(0,255,0,0.1);
+            border: 1px solid #333;
+        }
+
+        /* 2. MIDDLE: INPUTS */
+        #controls {
+            padding: 15px;
+            background: var(--panel);
+            border-bottom: 1px solid #333;
+            overflow-y: auto;
+        }
+        .control-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .input-group { display: flex; flex-direction: column; }
+        label { font-size: 10px; color: #888; margin-bottom: 3px; }
+        input { 
+            background: #222; border: 1px solid #444; color: #fff; 
+            padding: 8px; font-family: monospace; font-size: 14px; 
+            border-radius: 4px;
+        }
+        button {
+            background: #333; color: #fff; border: 1px solid #555;
+            padding: 12px; cursor: pointer; font-weight: bold;
+            font-size: 12px; text-transform: uppercase;
+            border-radius: 4px; transition: background 0.2s;
+        }
+        button:hover { background: #444; border-color: #888; }
+        button:active { background: var(--accent); color: #000; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* 3. BOTTOM: TOOLS & LOGS */
+        #tools-area {
+            padding: 15px;
+            background: var(--bg);
+            overflow-y: auto;
+            border-top: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .tool-row { display: flex; gap: 10px; }
+        .tool-btn { flex: 1; background: #222; border: 1px solid var(--accent); color: var(--accent); }
+        .file-input { display: none; }
+        
+        #log-output {
+            font-size: 11px;
+            color: #888;
+            background: #0a0a0a;
+            padding: 10px;
+            border: 1px dashed #333;
+            min-height: 100px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .stat-hi { color: var(--accent); font-weight: bold; }
+        .stat-err { color: var(--err); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <!-- TOP: RENDER DISPLAY -->
+    <div id="canvas-wrapper">
+        <canvas id="glcanvas"></canvas>
+    </div>
+
+    <!-- MIDDLE: CONTROLS -->
+    <div id="controls">
+        <div class="control-grid">
+            <div class="input-group">
+                <label>Target Samples</label>
+                <input id="inp-target" type="number" value="500">
+            </div>
+            <div class="input-group">
+                <label>FPS Limit</label>
+                <input id="inp-fps" type="number" value="99999">
+            </div>
+            <div class="input-group">
+                <label>Max Bounces</label>
+                <input id="inp-bounce" type="number" value="25">
+            </div>
+            <div class="input-group">
+                <label>Seed (Integer)</label>
+                <input id="inp-seed" type="number" value="12345">
+            </div>
+        </div>
+        
+        <div class="control-grid">
+            <div class="input-group"><label>Progress</label><span id="status-display" style="padding:8px; color:#fff">Idle</span></div>
+            <button id="btn-restart">START RENDER</button>
+        </div>
+    </div>
+
+    <!-- BOTTOM: DATA TOOLS -->
+    <div id="tools-area">
+        <div class="tool-row">
+            <button id="btn-download" class="tool-btn" disabled>⬇ GET .TXT</button>
+            <button id="btn-compare-trigger" class="tool-btn" disabled>⚖ COMPARE</button>
+            <input type="file" id="inp-file" class="file-input" accept=".txt">
+        </div>
+        <div id="log-output">Waiting for render to finish...</div>
+    </div>
+</div>
+
+<!-- WORKER CODE -->
+<script id="worker-source" type="javascript/worker">
+    // === WORKER GLOBALS ===
+    let canvas, gl;
+    let width, height;
+    let frameCount = 0;
+    let isRunning = true;
+    
+    // Settings
+    let targetSamples = 10;
+    let maxBounces = 8;
+    let userSeed = 12345;
+    let fpsInterval = 1000 / 60;
+    let lastFrameTime = 0;
+
+    // Scene Data
+    let bvhNodes = [], orderedPrims = [], materials = [], lightIndices = [];
+    let texNodes, texPrims, texMats, texLights; 
+    // Kahan Textures: A/B for Ping Pong, CompA/CompB for Error compensation
+    let texA, texB, texCompA, texCompB;
+    let fbA, fbB; 
+    let ptProg, dispProg, vao;
+
+    // 1. MATH UTILITIES
+    const Vec3 = {
+        add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
+        sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
+        mul: (a, s) => [a[0]*s, a[1]*s, a[2]*s],
+        dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+        cross: (a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]],
+        norm: (a) => {
+            let l = Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+            return l === 0 ? [0,0,0] : [a[0]/l, a[1]/l, a[2]/l];
+        },
+        min: (a, b) => [Math.min(a[0],b[0]), Math.min(a[1],b[1]), Math.min(a[2],b[2])],
+        max: (a, b) => [Math.max(a[0],b[0]), Math.max(a[1],b[1]), Math.max(a[2],b[2])],
+        len: (a) => Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2])
+    };
+
+    // 2. SCENE BUILDER (Unchanged)
+    let primitives = []; 
+    let bvhBuildInfo = [];
+    let originalLightPrimIndices = [];
+
+    function addMaterial(albedo, emissive, rough, metal, ior, trans) {
+        materials.push({albedo, emissive, rough, metal, ior, trans});
+        return materials.length - 1;
+    }
+
+    function addSphere(pos, r, mat) {
+        let idx = primitives.length;
+        primitives.push({
+            type: 0, c: pos, r2: r*r, mat: mat, invR: 1.0/r, _originalIdx: idx 
+        });
+        let bounds = { 
+            min: Vec3.sub(pos, [r,r,r]), max: Vec3.add(pos, [r,r,r]) 
+        };
+        bvhBuildInfo.push({ idx: idx, bounds: bounds, centroid: pos });
+    }
+
+    function addRect(p0, p1, p2, p3, n, mat, isLight = false) {
+        let idx = primitives.length;
+        let v0 = Vec3.sub(p1, p0);
+        let v1 = Vec3.sub(p3, p0); 
+        let norm = Vec3.norm(n);
+        let d00 = Vec3.dot(v0, v0);
+        let d11 = Vec3.dot(v1, v1);
+        let d01 = Vec3.dot(v0, v1);
+        let det = d00 * d11 - d01 * d01;
+        let invDet = Math.abs(det) < 1e-9 ? 0 : 1.0 / det;
+        let d = Vec3.dot(p0, norm); 
+        let crossVec = Vec3.cross(v0, v1);
+        let area = Vec3.len(crossVec);
+
+        primitives.push({
+            type: 1, p0: p0, v0: v0, v1: v1, n: norm, area: area, 
+            d00: d00, d11: d11, d01: d01, invDet: invDet, d: d, mat: mat, _originalIdx: idx 
+        });
+
+        let eps = 0.05;
+        let min = [
+            Math.min(p0[0],p1[0],p2[0],p3[0])-eps, Math.min(p0[1],p1[1],p2[1],p3[1])-eps, Math.min(p0[2],p1[2],p2[2],p3[2])-eps
+        ];
+        let max = [
+            Math.max(p0[0],p1[0],p2[0],p3[0])+eps, Math.max(p0[1],p1[1],p2[1],p3[1])+eps, Math.max(p0[2],p1[2],p2[2],p3[2])+eps
+        ];
+        bvhBuildInfo.push({ 
+            idx: idx, bounds: { min: min, max: max }, centroid: Vec3.mul(Vec3.add(min, max), 0.5) 
+        });
+        
+        if (isLight) originalLightPrimIndices.push(idx);
+        return idx;
+    }
+
+    function addBox(c, s, mat) {
+        let h = Vec3.mul(s, 0.5);
+        let p0 = [c[0]-h[0], c[1]-h[1], c[2]-h[2]];
+        let p7 = [c[0]+h[0], c[1]+h[1], c[2]+h[2]];
+        let p1 = [p7[0], p0[1], p0[2]], p2 = [p7[0], p7[1], p0[2]], p3 = [p0[0], p7[1], p0[2]];
+        let p4 = [p0[0], p0[1], p7[2]], p5 = [p7[0], p0[1], p7[2]], p6 = [p0[0], p7[1], p7[2]];
+        addRect(p0, p1, p2, p3, [0,0,-1], mat); 
+        addRect(p5, p4, p6, p7, [0,0,1], mat);
+        addRect(p1, p5, p7, p2, [1,0,0], mat);  
+        addRect(p4, p0, p3, p6, [-1,0,0], mat);
+        addRect(p3, p2, p7, p6, [0,1,0], mat);  
+        addRect(p0, p4, p5, p1, [0,-1,0], mat);
+    }
+
+    function buildScene() {
+        function strongHash(v) {
+            v ^= v >>> 15; v = Math.imul(v, 0x469e0db1);
+            v ^= v >>> 17; v = Math.imul(v, 0x1b873593);
+            v ^= v >>> 13; return v >>> 0;
+        }
+        function getRandomColor(id) {
+            let h = strongHash(userSeed ^ id); 
+            let r = (h & 0x3FF) / 1023.0;
+            let g = ((h >> 10) & 0x3FF) / 1023.0;
+            let b = ((h >> 20) & 0x3FF) / 1023.0;
+            return [0.2 + r * 0.8, 0.2 + g * 0.8, 0.2 + b * 0.8];
+        }
+
+        materials = []; primitives = []; bvhBuildInfo = []; lightIndices = []; bvhNodes = []; orderedPrims = []; originalLightPrimIndices = [];
+        
+        function surroundingBox(b0, b1) { 
+            return { min: Vec3.min(b0.min, b1.min), max: Vec3.max(b0.max, b1.max) }; 
+        }
+
+        const white = addMaterial(getRandomColor(1), [0,0,0], 0, 0, 1.5, 0); 
+        const red   = addMaterial(getRandomColor(2),   [0,0,0], 0, 0, 1.5, 0); 
+        const green = addMaterial(getRandomColor(3),   [0,0,0], 0, 0, 1.5, 0); 
+        const light = addMaterial([0,0,0],          [10,10,10], 0, 0, 1.5, 0);
+        const glass = addMaterial([1,1,1],          [0,0,0], 0, 0, 1.5, 1.0); 
+        const gold  = addMaterial([0.86,0.7,0.2],   [0,0,0], 0.15, 1.0, 1.5, 0); 
+        const floor = addMaterial([0.78,0.78,0.78], [0,0,0], 0.2, 0.6, 1.5, 0); 
+        
+        let d = 30.0;
+        addRect([-d,-d,d],[d,-d,d],[d,-d,-d],[-d,-d,-d], [0,1,0], floor);
+        addRect([-d,d,d],[-d,d,-d],[d,d,-d],[d,d,d], [0,-1,0], white);
+        addRect([-d,-d,-d],[d,-d,-d],[d,d,-d],[-d,d,-d], [0,0,1], white);
+        addRect([-d,-d,d],[-d,-d,-d],[-d,d,-d],[-d,d,d], [1,0,0], green);
+        addRect([d,-d,d],[d,-d,-d],[d,d,-d],[d,d,d], [-1,0,0], red);
+        addRect([-d,-d,d],[d,-d,d],[d,d,d],[-d,d,d], [0,0,-1], white);
+
+        let sz = [24, 8, 8]; 
+        let fy = -d; 
+        let s1y = fy + sz[1]/2.0, s1z = 0;
+        let s2y = s1y + sz[1], s2z = s1z + sz[2];
+        let s3y = s2y + sz[1], s3z = s2z + sz[2];
+
+        addBox([0, s1y, s1z], sz, gold);
+        addBox([0, s2y, s2z], sz, gold);
+        addBox([0, s3y, s3z], sz, gold);
+
+        let sr = 4.0; let spy = sz[1]/2.0 + sr; let xd = 8.0; let zo = 0.07;
+        [-xd, 0, xd].forEach(x => addSphere([x, s1y+spy, s1z-zo], sr, glass));
+        [-xd, 0, xd].forEach(x => addSphere([x, s2y+spy, s2z-zo], sr, glass));
+        [-xd, 0, xd].forEach(x => addSphere([x, s3y+spy, s3z-zo], sr, glass));
+        [-xd, 0, xd].forEach(x => addSphere([x, fy+sr, -8], sr, glass));
+
+        let ld = 8.0;
+        addRect([-ld, d-0.2, ld], [ld, d-0.2, ld], [ld, d-0.2, -ld], [-ld, d-0.2, -ld], [0,-1,0], light, true);
+
+        let originalToOrdered = new Array(primitives.length).fill(-1);
+        let stack = [{start: 0, end: bvhBuildInfo.length, nodeIdx: 0, parent: -1}];
+        bvhNodes.push({});
+
+        while (stack.length > 0) {
+            let task = stack.pop();
+            let idx = task.nodeIdx;
+            if (idx === -1) { 
+                idx = bvhNodes.length; bvhNodes.push({}); bvhNodes[task.parent].secondChild = idx; 
+            }
+            let start = task.start, end = task.end, nPrims = end - start;
+            let bounds = getBounds(start, end);
+            bvhNodes[idx].min = bounds.min; bvhNodes[idx].max = bounds.max;
+            
+            if (nPrims <= 4) {
+                bvhNodes[idx].primOffset = orderedPrims.length; bvhNodes[idx].nPrims = nPrims;
+                bvhNodes[idx].axis = 0; bvhNodes[idx].secondChild = 0;
+                for(let i = start; i < end; i++) {
+                    let origIdx = bvhBuildInfo[i].idx;
+                    originalToOrdered[origIdx] = orderedPrims.length;
+                    orderedPrims.push(primitives[origIdx]);
+                }
+                continue;
+            }
+            let bestCost = 1e30, bestAxis = -1, bestSplit = -1;
+            let ext = Vec3.sub(bounds.max, bounds.min);
+            let saRoot = 2.0 * (ext[0]*ext[1] + ext[0]*ext[2] + ext[1]*ext[2]);
+            for(let axis = 0; axis < 3; axis++) {
+                bvhBuildInfo.slice(start, end).sort((a,b) => a.centroid[axis] - b.centroid[axis]).forEach((v, i) => bvhBuildInfo[start+i] = v);
+                let areaRight = new Float32Array(nPrims); let boxR = bvhBuildInfo[end-1].bounds; areaRight[nPrims-1] = 0;
+                for(let i = nPrims - 2; i >= 0; i--) { 
+                    boxR = surroundingBox(boxR, bvhBuildInfo[start+i+1].bounds); 
+                    let e = Vec3.sub(boxR.max, boxR.min); 
+                    areaRight[i] = 2.0 * (e[0]*e[1] + e[0]*e[2] + e[1]*e[2]); 
+                }
+                let boxL = bvhBuildInfo[start].bounds;
+                for(let i = 0; i < nPrims - 1; i++) {
+                    boxL = surroundingBox(boxL, bvhBuildInfo[start+i].bounds); 
+                    let e = Vec3.sub(boxL.max, boxL.min); 
+                    let saL = 2.0 * (e[0]*e[1] + e[0]*e[2] + e[1]*e[2]);
+                    let cost = 0.125 + ((i+1)*saL + (nPrims-1-i)*areaRight[i]) / saRoot;
+                    if(cost < bestCost) { bestCost = cost; bestAxis = axis; bestSplit = start + i + 1; }
+                }
+            }
+            if (bestAxis === -1) {
+                bvhNodes[idx].primOffset = orderedPrims.length; bvhNodes[idx].nPrims = nPrims;
+                bvhNodes[idx].axis = 0; bvhNodes[idx].secondChild = 0;
+                for(let i = start; i < end; i++) {
+                    let origIdx = bvhBuildInfo[i].idx;
+                    originalToOrdered[origIdx] = orderedPrims.length;
+                    orderedPrims.push(primitives[origIdx]);
+                }
+                continue;
+            }
+            bvhBuildInfo.slice(start, end).sort((a,b) => a.centroid[bestAxis] - b.centroid[bestAxis]).forEach((v, i) => bvhBuildInfo[start+i] = v);
+            bvhNodes[idx].axis = bestAxis; bvhNodes[idx].nPrims = 0;
+            stack.push({start: bestSplit, end: end, nodeIdx: -1, parent: idx}); 
+            bvhNodes.push({}); 
+            stack.push({start: start, end: bestSplit, nodeIdx: bvhNodes.length-1, parent: -1});
+        }
+        lightIndices = originalLightPrimIndices.map(origIdx => originalToOrdered[origIdx]);
+        function getBounds(start, end) {
+            let b = bvhBuildInfo[start].bounds;
+            for(let i = start + 1; i < end; i++) b = surroundingBox(b, bvhBuildInfo[i].bounds);
+            return b;
+        }
+    }
+
+    // 3. SHADERS
+    const vsSource = `#version 300 es
+    in vec2 pos; void main() { gl_Position = vec4(pos, 0, 1); }`;
+
+    const fsSource = `#version 300 es
+    precision highp float; 
+    precision highp int;
+    
+    // OUTPUTS: 0 = Accumulated Sum, 1 = Kahan Compensation (Error)
+    layout(location = 0) out vec4 outColor;
+    layout(location = 1) out vec4 outComp;
+
+    uniform vec2 uRes; uniform int uFrame; 
+    uniform vec3 uCamPos, uCamBL, uCamH, uCamV;
+    uniform vec3 uCamRight, uCamUp;
+    uniform float uFocalDist, uLensRadius;
+    uniform int uNumLights, uMaxBounces, uSeed;
+    
+    // uAccum is the Sum, uComp is the Kahan Error
+    uniform sampler2D uNodes, uPrims, uMats, uLights, uAccum, uComp;
+    
+    #define PI 3.14159265359
+    #define MAX_FLOAT 1e30
+    #define EPSILON 0.2
+
+    uint rngState;
+    uint pcg_hash(uint seed) {
+        uint state = seed * 747796405u + 2891336453u;
+        uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+        return (word >> 22u) ^ word;
+    }
+
+    float rand() { 
+        rngState = pcg_hash(rngState); 
+        return float(rngState) * (1.0 / 4294967296.0); 
+    }
+
+    uint init_rng(vec2 p, uint frame, uint seed) {
+        uint x = uint(p.x + 1000.0); 
+        uint y = uint(p.y + 1000.0);
+        return pcg_hash(x ^ pcg_hash(y) ^ pcg_hash(frame) ^ pcg_hash(seed));
+    }
+
+    struct Node { vec3 minB; int primOffset; vec3 maxB; int nPrims; int axis; int secondChild; };
+    int toInt(float f) { return int(floor(f + 0.5)); }
+    Node getNode(int i) {
+        vec4 d0 = texelFetch(uNodes, ivec2(0, i), 0); vec4 d1 = texelFetch(uNodes, ivec2(1, i), 0); vec4 d2 = texelFetch(uNodes, ivec2(2, i), 0);
+        return Node(d0.xyz, toInt(d0.w), d1.xyz, toInt(d1.w), toInt(d2.x), toInt(d2.y));
+    }
+    vec4 getP(int idx, int off) { return texelFetch(uPrims, ivec2(off, idx), 0); }
+    struct Material { vec3 albedo; vec3 emissive; float metal; float rough; float ior; float trans; };
+    Material getMat(int idx) {
+        vec4 d0 = texelFetch(uMats, ivec2(0, idx), 0); vec4 d1 = texelFetch(uMats, ivec2(1, idx), 0); vec4 d2 = texelFetch(uMats, ivec2(2, idx), 0);
+        return Material(d0.rgb, d1.rgb, d2.x, d2.y, d2.z, d2.w);
+    }
+    int getLightIdx(int i) { return toInt(texelFetch(uLights, ivec2(0, i), 0).r); }
+    struct Ray { vec3 o, d, invD; }; struct Hit { float t; int idx; int type; }; struct Surface { vec3 p, n; bool front; int mat; };
+
+    float pow5(float x) { float x2 = x*x; return x2*x2*x; }
+    float safe_sqrt(float x) { return sqrt(max(0.0, x)); }
+    vec3 safeInverse(vec3 d) {
+        const float eps = 1e-6;
+        return vec3(abs(d.x)>eps?1.0/d.x:(d.x>=0.0?1.0/eps:-1.0/eps), abs(d.y)>eps?1.0/d.y:(d.y>=0.0?1.0/eps:-1.0/eps), abs(d.z)>eps?1.0/d.z:(d.z>=0.0?1.0/eps:-1.0/eps));
+    }
+    void create_basis(vec3 n, out vec3 t, out vec3 b) { vec3 up = abs(n.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0); t = normalize(cross(up, n)); b = cross(n, t); }
+
+    float intersect_sphere(int idx, Ray r, float tMin, float tMax) {
+        vec4 p0 = getP(idx, 0); vec4 p1 = getP(idx, 1);
+        vec3 center = p0.yzw; float r2 = p1.x;
+        vec3 oc = r.o - center; float b = dot(oc, r.d); float c = dot(oc, oc) - r2;
+        float disc = b*b - c; if (disc < 0.0) return MAX_FLOAT;
+        float sq = sqrt(disc); float t = -b - sq;
+        if (t > tMin && t < tMax) return t;
+        t = -b + sq; if (t > tMin && t < tMax) return t;
+        return MAX_FLOAT;
+    }
+    float intersect_rect(int idx, Ray r, float tMin, float tMax) {
+        vec4 p0 = getP(idx, 0); vec4 p1 = getP(idx, 1); vec4 p2 = getP(idx, 2);
+        vec4 p3 = getP(idx, 3); vec4 p5 = getP(idx, 5);
+        vec3 normal = p3.xyz; float d = p5.x; float denom = dot(normal, r.d);
+        if (abs(denom) < 1e-4) return MAX_FLOAT;
+        float t = (d - dot(r.o, normal)) / denom;
+        if (t < tMin || t > tMax) return MAX_FLOAT;
+        vec3 p = r.o + r.d * t;
+        vec3 corner = p0.yzw; vec3 v0 = p1.yzw; vec3 v1 = p2.yzw; vec3 v2 = p - corner;
+        float dot00 = dot(v0, v0); float dot01 = dot(v0, v1); float dot02 = dot(v0, v2);
+        float dot11 = dot(v1, v1); float dot12 = dot(v1, v2);
+        float invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+        float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+        float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+        if (u >= -0.01 && v >= -0.01 && u <= 1.01 && v <= 1.01) return t;
+        return MAX_FLOAT;
+    }
+    bool traverse(Ray r, inout Hit best, float tMax) {
+        bool hit = false; best.t = tMax; best.idx = -1; int stack[32]; int ptr = 0; int nodeIdx = 0;
+        for(int k = 0; k < 512; k++) { 
+            Node node = getNode(nodeIdx);
+            vec3 t0 = (node.minB - r.o) * r.invD; vec3 t1 = (node.maxB - r.o) * r.invD;
+            vec3 tsmaller = min(t0, t1); vec3 tbigger = max(t0, t1);
+            float tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z); float tm = min(min(tbigger.x, tbigger.y), tbigger.z);
+            if (tm >= max(EPSILON, tmin) && tmin < best.t) {
+                if (node.nPrims > 0) {
+                    for(int i = 0; i < node.nPrims; i++) {
+                        int pIdx = node.primOffset + i;
+                        float typeVal = getP(pIdx, 0).x; int type = toInt(typeVal);
+                        float t = (type == 0) ? intersect_sphere(pIdx, r, EPSILON, best.t) : intersect_rect(pIdx, r, EPSILON, best.t);
+                        if (t < best.t) { hit = true; best.t = t; best.idx = pIdx; best.type = type; }
+                    }
+                    if (ptr == 0) break; nodeIdx = stack[--ptr];
+                } else {
+                    float dAxis = (node.axis == 0) ? r.d.x : ((node.axis == 1) ? r.d.y : r.d.z);
+                    bool dirNeg = dAxis < 0.0;
+                    int near = dirNeg ? node.secondChild : (nodeIdx + 1); int far = dirNeg ? (nodeIdx + 1) : node.secondChild;
+                    stack[ptr++] = far; nodeIdx = near;
+                }
+            } else { if (ptr == 0) break; nodeIdx = stack[--ptr]; }
+        }
+        return hit;
+    }
+    vec3 getVisibility(Ray r, float tMax) {
+        vec3 transmission = vec3(1.0); int stack[32]; int ptr = 0; int nodeIdx = 0;
+        for(int k = 0; k < 512; k++) {
+            Node node = getNode(nodeIdx);
+            vec3 t0 = (node.minB - r.o) * r.invD; vec3 t1 = (node.maxB - r.o) * r.invD;
+            float tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+            float tm = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+            if (tm >= max(EPSILON, tmin) && tmin < tMax) {
+                if (node.nPrims > 0) {
+                    for(int i = 0; i < node.nPrims; i++) {
+                        int pIdx = node.primOffset + i; int type = toInt(getP(pIdx, 0).x);
+                        float t = (type == 0) ? intersect_sphere(pIdx, r, EPSILON, tMax) : intersect_rect(pIdx, r, EPSILON, tMax);
+                        if (t < tMax) {
+                            int mIdx = (type == 0) ? toInt(getP(pIdx, 1).y) : toInt(getP(pIdx, 5).y);
+                            Material m = getMat(mIdx);
+                            if (m.trans > 0.0) { transmission *= (m.albedo * 0.7); if (dot(transmission, transmission) < 0.0001) return vec3(0.0); } 
+                            else return vec3(0.0);
+                        }
+                    }
+                    if (ptr == 0) break; nodeIdx = stack[--ptr];
+                } else {
+                    float dAxis = (node.axis == 0) ? r.d.x : ((node.axis == 1) ? r.d.y : r.d.z);
+                    int near = (dAxis < 0.0) ? node.secondChild : (nodeIdx + 1); int far = (dAxis < 0.0) ? (nodeIdx + 1) : node.secondChild;
+                    stack[ptr++] = far; nodeIdx = near;
+                }
+            } else { if (ptr == 0) break; nodeIdx = stack[--ptr]; }
+        }
+        return transmission;
+    }
+    void getSurface(Ray r, Hit h, out Surface s) {
+        s.p = r.o + r.d * h.t;
+        if (h.type == 0) {
+            vec4 p0 = getP(h.idx, 0); vec4 p1 = getP(h.idx, 1);
+            vec3 center = p0.yzw; float invR = p1.z; s.n = (s.p - center) * invR; s.mat = toInt(p1.y);
+        } else { s.n = getP(h.idx, 3).xyz; s.mat = toInt(getP(h.idx, 5).y); }
+        s.front = dot(r.d, s.n) < 0.0; if (!s.front) s.n = -s.n;
+    }
+    float ggx_d_term(vec3 N, vec3 H, float roughness) {
+        float a = roughness * roughness; float a2 = a * a; float NdotH = max(dot(N, H), 0.0); float NdotH2 = NdotH * NdotH;
+        float denom = NdotH2 * (a2 - 1.0) + 1.0; denom = PI * denom * denom; return (denom > 1e-6) ? a2 / denom : 0.0;
+    }
+    float ggx_pdf(vec3 N, vec3 H, vec3 V, float roughness) {
+        float NdotH = max(dot(N, H), 0.0); float VdotH = max(dot(V, H), 0.0); float D = ggx_d_term(N, H, roughness);
+        return (VdotH < 1e-6) ? 0.0 : (D * NdotH) / (4.0 * VdotH);
+    }
+    vec3 sample_ggx(vec3 N, float roughness) {
+        vec2 u = vec2(rand(), rand()); float a = roughness * roughness; float a2 = a * a; float phi = 2.0 * PI * u.x; 
+        float cosT = safe_sqrt((1.0 - u.y) / ((a2 - 1.0) * u.y + 1.0)); float sinT = safe_sqrt(1.0 - cosT * cosT);
+        vec3 H = vec3(cos(phi) * sinT, sin(phi) * sinT, cosT); vec3 t, b; create_basis(N, t, b); return normalize(t * H.x + b * H.y + N * H.z);
+    }
+    vec3 sample_cosine(vec3 N) {
+        vec2 u = vec2(rand(), rand()); float r = sqrt(u.x); float theta = 2.0 * PI * u.y;
+        vec3 p = vec3(r * cos(theta), r * sin(theta), safe_sqrt(1.0 - u.x)); vec3 t, b; create_basis(N, t, b); return normalize(t * p.x + b * p.y + N * p.z);
+    }
+    float fresnel_schlick(float cosTheta, float ior) {
+        float r0 = (1.0 - ior) / (1.0 + ior); r0 = r0 * r0; return r0 + (1.0 - r0) * pow5(1.0 - cosTheta);
+    }
+
+    void main() {
+        rngState = init_rng(gl_FragCoord.xy, uint(uFrame), uint(uSeed));
+
+        // 1. READ PREVIOUS KAHAN DATA
+        vec4 oldSum = texelFetch(uAccum, ivec2(gl_FragCoord.xy), 0);
+        vec4 oldComp = texelFetch(uComp, ivec2(gl_FragCoord.xy), 0);
+        if (uFrame == 0) { oldSum = vec4(0.0); oldComp = vec4(0.0); }
+
+        // 2. RAY SETUP
+        vec2 jitter = vec2(rand(), rand()) - 0.5;
+        vec2 uv = (gl_FragCoord.xy + jitter) / uRes;
+        vec3 target = uCamBL + uCamH * uv.x + uCamV * uv.y; 
+        vec3 dir = normalize(target - uCamPos);
+        vec3 focusPoint = uCamPos + dir * uFocalDist; 
+        float angle = 2.0 * PI * rand(); 
+        float radius = uLensRadius * sqrt(rand());
+        vec3 lensOffset = uCamRight * (radius * cos(angle)) + uCamUp * (radius * sin(angle));
+        vec3 origin = uCamPos + lensOffset; 
+        vec3 rayDir = normalize(focusPoint - origin);
+        
+        Ray r; r.o = origin; r.d = rayDir; r.invD = safeInverse(r.d);
+        vec3 acc = vec3(0.0); vec3 att = vec3(1.0); 
+        bool lastBounceSpecular = true;
+
+        // 3. PATH TRACING
+        for (int depth = 0; depth < uMaxBounces; depth++) {
+            Hit hit;
+            if (!traverse(r, hit, MAX_FLOAT)) {
+                vec3 unit_d = normalize(r.d); float t = 0.5 * (unit_d.y + 1.0);
+                vec3 sky = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t); acc += sky * att * 0.5; break;
+            }
+            Surface surf; getSurface(r, hit, surf); Material mat = getMat(surf.mat);
+            
+            if (dot(mat.emissive, mat.emissive) > 0.0) { 
+                if (depth == 0 || lastBounceSpecular) { acc += mat.emissive * att; } break; 
+            }
+
+            bool isGlass = (mat.trans > rand()); bool isMetal = (rand() < mat.metal); 
+            vec3 nextDir; vec3 V = -r.d;
+
+            if (isGlass) {
+                lastBounceSpecular = true;
+                if (!surf.front) att *= exp(-(vec3(1.0) - mat.albedo) * hit.t * 0.5);
+                float eta = surf.front ? (1.0 / mat.ior) : mat.ior;
+                float cosI = clamp(dot(V, surf.n), -1.0, 1.0); 
+                float sin2T = eta * eta * (1.0 - cosI * cosI); 
+                float F = fresnel_schlick(abs(cosI), mat.ior);
+                bool tir = sin2T > 1.0; 
+                bool doReflect = tir || (F > rand());
+                
+                // SAFER BIAS (0.01) to prevent mobile artifacts vs PC precision
+                if (doReflect) { 
+                    nextDir = reflect(r.d, surf.n); 
+                    r.o = surf.p + surf.n * 0.01; 
+                } else {
+                    float cosT = safe_sqrt(1.0 - sin2T);
+                    nextDir = r.d * eta + surf.n * (eta * cosI - cosT);
+                    nextDir = normalize(nextDir);
+                    r.o = surf.p - surf.n * 0.01;
+                }
+                if (surf.front) att *= mat.albedo;
+                r.d = nextDir; r.invD = safeInverse(r.d);
+
+            } else {
+                if (uNumLights > 0) {
+                    // (Lighting Code Omitted for brevity - keeps existing logic)
+                    // Assume standard NEE implementation here or copy from previous full version
+                    // ... [Same NEE Logic] ...
+                    // For the sake of the fix, I'll paste the compact NEE:
+                    int lIdx = int(floor(rand() * float(uNumLights))); lIdx = min(lIdx, uNumLights - 1); int lPrim = getLightIdx(lIdx);
+                    vec4 lp0 = getP(lPrim, 0); vec4 lp1 = getP(lPrim, 1); vec4 lp2 = getP(lPrim, 2); vec4 lp3 = getP(lPrim, 3); vec4 lp5 = getP(lPrim, 5);
+                    vec3 lightNormal = lp3.xyz; float lightArea = lp1.x; vec3 lightPoint = lp0.yzw + lp1.yzw * rand() + lp2.yzw * rand();
+                    vec3 toLight = lightPoint - surf.p; float dist = length(toLight); vec3 L = toLight / dist;
+                    float NdotL = dot(surf.n, L); float lightCos = max(dot(lightNormal, -L), 0.0);
+                    if (NdotL > 0.0 && lightCos > 1e-6) {
+                        Ray shadowRay; shadowRay.o = surf.p + surf.n * EPSILON; shadowRay.d = L; shadowRay.invD = safeInverse(L);
+                        vec3 vis = getVisibility(shadowRay, dist - 2.0 * EPSILON);
+                        if (dot(vis, vis) > 0.0) {
+                            float pdf = dist * dist / (lightArea * lightCos * float(uNumLights));
+                            float bsdfPdf = NdotL / PI; // Simplified for robustness
+                            if (pdf > 0.0) acc += att * getMat(toInt(lp5.y)).emissive * (mat.albedo / PI) * NdotL * vis / pdf;
+                        }
+                    }
+                }
+
+                // Metal/Diffuse Logic
+                if (isMetal) {
+                    lastBounceSpecular = true; vec3 H = sample_ggx(surf.n, mat.rough); nextDir = reflect(-V, H);
+                    if (dot(nextDir, surf.n) <= 0.0) nextDir = sample_cosine(surf.n); att *= mat.albedo;
+                } else {
+                    float F = fresnel_schlick(clamp(dot(V, surf.n), 0.0, 1.0), 1.5) * (1.0 - mat.rough); // Simplified F
+                    if (rand() < F) { lastBounceSpecular = true; nextDir = reflect(r.d, surf.n); } 
+                    else { lastBounceSpecular = false; nextDir = sample_cosine(surf.n); att *= mat.albedo; }
+                }
+                r.o = surf.p + surf.n * 0.01; 
+                r.d = normalize(nextDir); r.invD = safeInverse(r.d);
+            }
+            
+            if (depth > 3) { float p = max(att.r, max(att.g, att.b)); if (rand() > p) break; att /= p; }
+        }
+        
+        // 4. FIREFLY CLAMPING (CRITICAL FIX)
+        // We limit the energy of a single sample to 5.0. 
+        // This stops "Lucky Rays" from creating 400% variance.
+        acc = min(acc, vec3(5.0));
+
+        // 5. NaN Check
+        if (dot(acc, acc) < 0.0 || isnan(dot(acc, acc))) acc = vec3(0.0);
+
+        // 6. CANARY LOGIC
+        int pixelIndex = int(gl_FragCoord.y) * int(uRes.x) + int(gl_FragCoord.x);
+        if ((pixelIndex % 1009) == 0) {
+            uint h = pcg_hash(uint(pixelIndex) ^ uint(uSeed));
+            acc = vec3(float(h & 0xFFu)/255.0, float((h>>8u)&0xFFu)/255.0, float((h>>16u)&0xFFu)/255.0);
+            oldComp = vec4(0.0);
+        }
+
+        // 7. KAHAN SUMMATION
+        vec3 y = acc - oldComp.rgb;
+        vec3 t = oldSum.rgb + y;
+        vec3 c = (t - oldSum.rgb) - y;
+        outColor = vec4(t, 1.0);
+        outComp = vec4(c, 1.0);
+    }`;
+
+    const displayVs = `#version 300 es
+    in vec2 pos; out vec2 uv; void main() { uv = pos * 0.5 + 0.5; gl_Position = vec4(pos, 0, 1); }`;
+    
+    // MODIFIED DISPLAY: Explicit flooring for mobile precision
+    const displayFs = `#version 300 es
+    precision highp float; 
+    precision highp int;
+    
+    in vec2 uv; 
+    
+    uniform sampler2D tex; 
+    uniform float uTotalSamples;
+    uniform vec2 uRes; 
+    
+    out vec4 color;
+    
+    vec3 aces(vec3 x) { const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14; return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0); }
+    
+    void main() { 
+        // ROBUST INDEXING: 
+        // Mobile GPUs need explicit floor() before casting to int
+        // to avoid off-by-one errors in coordinate reading.
+        int x = int(floor(gl_FragCoord.x));
+        int y = int(floor(gl_FragCoord.y));
+        int idx = y * int(uRes.x) + x;
+        
+        vec2 sampleUV = uv;
+
+        // Hide Canary
+        if ((idx % 1009) == 0) {
+            sampleUV = uv + vec2(1.0 / uRes.x, 0.0);
+        }
+
+        vec4 data = texture(tex, sampleUV);
+        vec3 c = data.rgb / max(1.0, uTotalSamples); 
+        c = aces(c); 
+        c = pow(c, vec3(1.0 / 2.2)); 
+        color = vec4(c, 1.0); 
+    }`;
+
+    // 4. GL SETUP
+    function createProg(vs, fs) {
+        let p = gl.createProgram();
+        let v = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(v, vs); gl.compileShader(v);
+        let f = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(f, fs); gl.compileShader(f);
+        gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
+        return p;
+    }
+    function createDataTex(data, width, height) {
+        let t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, data);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        return t;
+    }
+
+    function initGL() {
+        gl = canvas.getContext("webgl2", { powerPreference: "high-performance", alpha: false, preserveDrawingBuffer: true });
+        gl.getExtension("EXT_color_buffer_float"); gl.getExtension("OES_texture_float_linear");
+        ptProg = createProg(vsSource, fsSource); dispProg = createProg(displayVs, displayFs);
+        vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+        const nodeData = new Float32Array(bvhNodes.length * 12);
+        bvhNodes.forEach((n, i) => {
+            let b = i * 12;
+            nodeData[b+0] = n.min[0]; nodeData[b+1] = n.min[1]; nodeData[b+2] = n.min[2]; nodeData[b+3] = n.primOffset || 0;
+            nodeData[b+4] = n.max[0]; nodeData[b+5] = n.max[1]; nodeData[b+6] = n.max[2]; nodeData[b+7] = n.nPrims || 0;
+            nodeData[b+8] = n.axis || 0; nodeData[b+9] = n.secondChild || 0;
+        });
+        texNodes = createDataTex(nodeData, 3, bvhNodes.length);
+        const primData = new Float32Array(orderedPrims.length * 24);
+        orderedPrims.forEach((p, i) => {
+            let b = i * 24;
+            primData[b+0] = p.type;
+            if (p.type === 0) { 
+                primData[b+1] = p.c[0]; primData[b+2] = p.c[1]; primData[b+3] = p.c[2];
+                primData[b+4] = p.r2; primData[b+5] = p.mat; primData[b+6] = p.invR;
+            } else { 
+                primData[b+1] = p.p0[0]; primData[b+2] = p.p0[1]; primData[b+3] = p.p0[2];
+                primData[b+4] = p.area; primData[b+5] = p.v0[0]; primData[b+6] = p.v0[1]; primData[b+7] = p.v0[2];
+                primData[b+9] = p.v1[0]; primData[b+10] = p.v1[1]; primData[b+11] = p.v1[2];
+                primData[b+12] = p.n[0]; primData[b+13] = p.n[1]; primData[b+14] = p.n[2];
+                primData[b+16] = p.d00; primData[b+17] = p.d11; primData[b+18] = p.d01; primData[b+19] = p.invDet;
+                primData[b+20] = p.d; primData[b+21] = p.mat;
+            }
+        });
+        texPrims = createDataTex(primData, 6, orderedPrims.length);
+        const matData = new Float32Array(materials.length * 12);
+        materials.forEach((m, i) => {
+            let b = i * 12;
+            matData[b+0] = m.albedo[0]; matData[b+1] = m.albedo[1]; matData[b+2] = m.albedo[2];
+            matData[b+4] = m.emissive[0]; matData[b+5] = m.emissive[1]; matData[b+6] = m.emissive[2];
+            matData[b+8] = m.metal; matData[b+9] = m.rough; matData[b+10] = m.ior; matData[b+11] = m.trans;
+        });
+        texMats = createDataTex(matData, 3, materials.length);
+        const lightData = new Float32Array(Math.max(lightIndices.length, 1) * 4);
+        lightIndices.forEach((idx, i) => { lightData[i * 4] = idx; });
+        texLights = createDataTex(lightData, 1, Math.max(lightIndices.length, 1));
+
+        canvas.width = width; canvas.height = height; gl.viewport(0, 0, width, height);
+        
+        const makeRenderTarget = () => {
+            let t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            return t;
+        };
+
+        // KAHAN MRT SETUP
+        texA = makeRenderTarget();     // Accumulator A
+        texCompA = makeRenderTarget(); // Error A
+        texB = makeRenderTarget();     // Accumulator B
+        texCompB = makeRenderTarget(); // Error B
+
+        fbA = gl.createFramebuffer(); 
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); 
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texA, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texCompA, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]); // Write to both
+
+        fbB = gl.createFramebuffer(); 
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); 
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texB, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texCompB, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]); // Write to both
+        
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0, 0, 0, 1);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); gl.clear(gl.COLOR_BUFFER_BIT); 
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); gl.clear(gl.COLOR_BUFFER_BIT); 
+        loop(0);
+    }
+
+    // 5. RENDER LOOP
+    function loop(now) {
+        if (now - lastFrameTime < fpsInterval) { requestAnimationFrame(loop); return; }
+        lastFrameTime = now;
+
+        if (frameCount >= targetSamples) {
+            if (isRunning) {
+                isRunning = false;
+                self.postMessage({ status: "finished" });
+                gl.finish();
+                // Read Sum from current Accumulator
+                let fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB, 0);
+                let pixels = new Float32Array(width * height * 4);
+                gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+                self.postMessage({ hashData: pixels.buffer }, [pixels.buffer]);
+            }
+            return;
+        }
+
+        let camPos = [0, -5, -25]; let lookAt = [0, -15, 4];
+        let fwd = Vec3.norm(Vec3.sub(lookAt, camPos)); let worldUp = [0, 1, 0];
+        let right = Vec3.norm(Vec3.cross(worldUp, fwd)); let up = Vec3.cross(fwd, right);
+        let focalDist = 22.0; let lensRadius = 0.025; let fov = 75 * Math.PI / 180;
+        let h = Math.tan(fov / 2); let ar = width / height;
+        let viewportH = 2.0 * h; let viewportW = ar * viewportH;
+        let horizontal = Vec3.mul(right, viewportW * focalDist); let vertical = Vec3.mul(up, viewportH * focalDist);
+        let llc = Vec3.sub(Vec3.add(camPos, Vec3.mul(fwd, focalDist)), Vec3.add(Vec3.mul(horizontal, 0.5), Vec3.mul(vertical, 0.5)));
+
+        gl.useProgram(ptProg);
+        gl.uniform2f(gl.getUniformLocation(ptProg, "uRes"), width * 1.0, height * 1.0);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uFrame"), frameCount);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uMaxBounces"), maxBounces);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uSeed"), userSeed);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamPos"), camPos);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamBL"), llc);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamH"), horizontal);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamV"), vertical);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamRight"), right);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamUp"), up);
+        gl.uniform1f(gl.getUniformLocation(ptProg, "uFocalDist"), focalDist);
+        gl.uniform1f(gl.getUniformLocation(ptProg, "uLensRadius"), lensRadius);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uNumLights"), lightIndices.length);
+
+        [texNodes, texPrims, texMats, texLights].forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uNodes"), 0); gl.uniform1i(gl.getUniformLocation(ptProg, "uPrims"), 1);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uMats"), 2); gl.uniform1i(gl.getUniformLocation(ptProg, "uLights"), 3);
+        
+        // Kahan Binding: Read from previous
+        let readSum  = frameCount % 2 === 0 ? texB : texA;
+        let readComp = frameCount % 2 === 0 ? texCompB : texCompA;
+        gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, readSum);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uAccum"), 4);
+        gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, readComp);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uComp"), 5);
+
+        // Write to next
+        gl.bindFramebuffer(gl.FRAMEBUFFER, frameCount % 2 === 0 ? fbA : fbB);
+        gl.viewport(0, 0, width, height);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.useProgram(dispProg);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, frameCount % 2 === 0 ? texA : texB);
+        gl.uniform1i(gl.getUniformLocation(dispProg, "tex"), 0);
+        gl.uniform1f(gl.getUniformLocation(dispProg, "uTotalSamples"), frameCount + 1);
+        gl.uniform2f(gl.getUniformLocation(dispProg, "uRes"), width * 1.0, height * 1.0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+        self.postMessage({ frame: frameCount + 1 });
+        frameCount++;
+        requestAnimationFrame(loop);
+    }
+
+    self.onmessage = function(e) {
+        if (e.data.init) {
+            canvas = e.data.canvas; width = e.data.width; height = e.data.height;
+        }
+        if (e.data.start) {
+            targetSamples = e.data.target; maxBounces = e.data.bounces; 
+            userSeed = e.data.seed; fpsInterval = 1000 / e.data.fps; 
+            buildScene(); initGL();
+            frameCount = 0; isRunning = true;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); gl.clear(gl.COLOR_BUFFER_BIT);
+            loop(0);
+        }
+    };
+</script>
+
+<!-- MAIN THREAD LOGIC -->
+<script>
+    const workerBlob = new Blob([document.getElementById('worker-source').textContent], { type: "text/javascript" });
+    const worker = new Worker(window.URL.createObjectURL(workerBlob));
+    const canvas = document.getElementById("glcanvas");
+    const RENDER_W = 400, RENDER_H = 400;
+
+    canvas.width = RENDER_W; canvas.height = RENDER_H;
+    let offscreen;
+    try { offscreen = canvas.transferControlToOffscreen(); } catch(e) { alert("Use a modern browser (Chrome/Edge/FF)"); }
+    
+    worker.postMessage({ init: true, canvas: offscreen, width: RENDER_W, height: RENDER_H }, [offscreen]);
+
+    // UI ELEMENTS
+    const btnRestart = document.getElementById("btn-restart");
+    const statusDisp = document.getElementById("status-display");
+    const logOut = document.getElementById("log-output");
+    const btnDownload = document.getElementById("btn-download");
+    const btnCompareTrigger = document.getElementById("btn-compare-trigger");
+    const inpFile = document.getElementById("inp-file");
+
+    let lastRawData = null; // Stores Float32Array
+
+    btnRestart.onclick = () => {
+        btnRestart.disabled = true;
+        btnDownload.disabled = true;
+        btnCompareTrigger.disabled = true;
+        lastRawData = null;
+        logOut.textContent = "Rendering...";
+        statusDisp.textContent = "Starting...";
+        
+        worker.postMessage({ 
+            start: true,
+            target: parseInt(document.getElementById("inp-target").value),
+            fps: parseInt(document.getElementById("inp-fps").value),
+            bounces: parseInt(document.getElementById("inp-bounce").value),
+            seed: parseInt(document.getElementById("inp-seed").value)
+        });
+    };
+
+    worker.onmessage = (e) => {
+        if (e.data.frame) {
+            statusDisp.textContent = `Samples: ${e.data.frame}`;
+        }
+        if (e.data.status === "finished") {
+            btnRestart.disabled = false;
+            statusDisp.textContent = "Finished. Processing Data...";
+        }
+        if (e.data.hashData) {
+            lastRawData = new Float32Array(e.data.hashData);
+            statusDisp.textContent = "Ready";
+            btnDownload.disabled = false;
+            btnCompareTrigger.disabled = false;
+            logOut.textContent = `Render Complete.\nResolution: ${RENDER_W}x${RENDER_H}\nRaw Sum Data captured (Kahan Precision).`;
+        }
+    };
+
+    btnDownload.onclick = () => {
+        if (!lastRawData) return;
+        statusDisp.textContent = "Generating Data...";
+        
+        setTimeout(() => {
+            const BLOCK_SIZE = 16;
+            let lines = [];
+            lines.push(`PATH TRACER DUMP V2`);
+            lines.push(`RES:${RENDER_W}x${RENDER_H}`);
+            lines.push(`BLOCKSIZE:${BLOCK_SIZE}`);
+            
+            // 1. EXTRACT CANARIES FIRST
+            let canaryLines = [];
+            for (let i = 0; i < RENDER_W * RENDER_H; i++) {
+                if ((i % 1009) === 0) {
+                    let idx = i * 4;
+                    // We save the raw Canary value from the GPU
+                    let r = lastRawData[idx].toPrecision(8);
+                    let g = lastRawData[idx+1].toPrecision(8);
+                    let b = lastRawData[idx+2].toPrecision(8);
+                    canaryLines.push(`${i}:${r},${g},${b}`);
+                }
+            }
+            lines.push(`CANARIES:${canaryLines.join("|")}`);
+
+            // 2. CALCULATE BLOCK SUMS
+            lines.push(`FORMAT:BlockID|SumR,SumG,SumB`);
+            let blockId = 0;
+
+            for (let by = 0; by < RENDER_H; by += BLOCK_SIZE) {
+                for (let bx = 0; bx < RENDER_W; bx += BLOCK_SIZE) {
+                    let sumR = 0, sumG = 0, sumB = 0;
+                    for (let y = 0; y < BLOCK_SIZE; y++) {
+                        for (let x = 0; x < BLOCK_SIZE; x++) {
+                            let cx = bx + x; 
+                            let cy = by + y;
+                            if (cx >= RENDER_W || cy >= RENDER_H) continue;
+
+                            let pIdx = cy * RENDER_W + cx;
+                            
+                            // EXCLUDE CANARIES from the Block Sum 
+                            // (So they don't mess up the lighting average)
+                            if ((pIdx % 1009) === 0) continue;
+
+                            let idx = pIdx * 4;
+                            sumR += lastRawData[idx];
+                            sumG += lastRawData[idx+1];
+                            sumB += lastRawData[idx+2];
+                        }
+                    }
+                    lines.push(`${blockId}|${sumR.toPrecision(18)},${sumG.toPrecision(18)},${sumB.toPrecision(18)}`);
+                    blockId++;
+                }
+            }
+            
+            const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `render_v2_${document.getElementById("inp-seed").value}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+            statusDisp.textContent = "Downloaded";
+        }, 50);
+    };
+
+    // === 3. COMPARE HANDLER (BLOCK SUM + CANARY) ===
+    btnCompareTrigger.onclick = () => inpFile.click();
+
+    inpFile.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        // Note: We don't strictly need lastRawData to check integrity, 
+        // but we need it to check Variance.
+        if (!lastRawData) { alert("Please render first (for Variance check)."); return; }
+
+        statusDisp.textContent = "Analyzing...";
+        
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const lines = evt.target.result.split("\n");
+            const BLOCK_SIZE = 16;
+            const samples = parseInt(document.getElementById("inp-target").value);
+            const userSeed = parseInt(document.getElementById("inp-seed").value);
+            
+            // Helper: PCG Hash (Must match Shader)
+            const getCanaryExp = (idx, seed) => {
+                let state = (BigInt(idx) ^ BigInt(seed)) * 747796405n + 2891336453n;
+                state = BigInt.asUintN(32, state);
+                let word = ((state >> ((state >> 28n) + 4n)) ^ state) * 277803737n;
+                word = BigInt.asUintN(32, word);
+                let h = Number(BigInt.asUintN(32, (word >> 22n) ^ word));
+                // Return Red channel expected value scaled by samples
+                return ((h & 0xFF) / 255.0) * samples;
+            };
+
+            let fileBlockSums = [];
+            let fileCanaries = new Map();
+
+            // 1. PARSE FILE
+            for (let line of lines) {
+                line = line.trim();
+                if (line.startsWith("CANARIES:")) {
+                    // Format: Index:R,G,B|Index:R,G,B...
+                    let raw = line.substring(9).split("|");
+                    for (let c of raw) {
+                        let parts = c.split(":");
+                        let vals = parts[1].split(",");
+                        fileCanaries.set(parseInt(parts[0]), parseFloat(vals[0])); // Store Red channel
+                    }
+                } else if (line.includes("|") && !line.includes("FORMAT")) {
+                    let parts = line.split("|")[1].split(",");
+                    fileBlockSums.push([parseFloat(parts[0]), parseFloat(parts[1]), parseFloat(parts[2])]);
+                }
+            }
+
+            // 2. CHECK INTEGRITY (The Anti-Cheat)
+            // We verify the data IN THE FILE against the MATH
+            let canaryFail = 0;
+            let canaryCount = 0;
+            
+            fileCanaries.forEach((val, idx) => {
+                canaryCount++;
+                let expected = getCanaryExp(idx, userSeed);
+                // Allow small float error (0.5) because Kahan is good but not infinite
+                if (Math.abs(val - expected) > 0.5) {
+                    canaryFail++;
+                }
+            });
+
+            if (canaryCount === 0) {
+                logOut.innerHTML = "<span class='stat-err'>Error: No Canaries found in file. Old format?</span>";
+                return;
+            }
+
+            // 3. CHECK VARIANCE (Hardware check)
+            // Compare File Blocks vs Local GPU Blocks
+            let totalDiffPct = 0;
+            let totalBlocks = 0;
+            let blockId = 0;
+
+            for (let by = 0; by < RENDER_H; by += BLOCK_SIZE) {
+                for (let bx = 0; bx < RENDER_W; bx += BLOCK_SIZE) {
+                    let gpuSum = [0, 0, 0];
+
+                    for (let y = 0; y < BLOCK_SIZE; y++) {
+                        for (let x = 0; x < BLOCK_SIZE; x++) {
+                            let cx = bx + x, cy = by + y;
+                            if (cx >= RENDER_W || cy >= RENDER_H) continue;
+                            
+                            let pIdx = cy * RENDER_W + cx;
+                            
+                            // SKIP CANARIES in sum (same as download logic)
+                            if ((pIdx % 1009) === 0) continue; 
+                            
+                            let idx = pIdx * 4;
+                            gpuSum[0] += lastRawData[idx];
+                            gpuSum[1] += lastRawData[idx+1];
+                            gpuSum[2] += lastRawData[idx+2];
+                        }
+                    }
+
+                    if (blockId < fileBlockSums.length) {
+                        let f = fileBlockSums[blockId];
+                        let diff = Math.abs(gpuSum[0] - f[0]) + Math.abs(gpuSum[1] - f[1]) + Math.abs(gpuSum[2] - f[2]);
+                        let energy = f[0] + f[1] + f[2] + 1.0;
+                        totalDiffPct += (diff / energy);
+                        totalBlocks++;
+                    }
+                    blockId++;
+                }
+            }
+
+            let avgDiff = (totalDiffPct / totalBlocks) * 100;
+            
+            // 4. REPORT
+            let html = `Verification Result (Remote File):\n--------------------------------\n`;
+            
+            if (canaryFail === 0) {
+                html += `<span class="stat-hi">INTEGRITY PASS: File contains valid seed data (${canaryCount}/${canaryCount}).</span>\n`;
+                html += `Visual Variance: ${avgDiff.toFixed(2)}%\n`;
+                
+                if (avgDiff < 5.0) {
+                    html += `<span class="stat-hi">VALID SUBMISSION (Perfect Match)</span>`;
+                } else if (avgDiff < 25.0) {
+                    html += `<span style="color:yellow">VALID SUBMISSION (Mobile/Desktop Drift)</span>`;
+                } else {
+                    html += `<span class="stat-err">WARNING: Visuals look wrong (${avgDiff.toFixed(0)}% diff).</span>`;
+                }
+            } else {
+                html += `<span class="stat-err">INTEGRITY FAIL: ${canaryFail} corrupted pixels.</span>\n`;
+                html += `The file data does not match the seed logic.\n`;
+                html += `<span class="stat-err">INVALID SUBMISSION</span>`;
+            }
+
+            logOut.innerHTML = html;
+            statusDisp.textContent = "Done";
+            inpFile.value = "";
+        };
+        reader.readAsText(file);
+    };
+
+    // Auto-start
+    btnRestart.click();
+
+</script>
+</body>
+</html>
