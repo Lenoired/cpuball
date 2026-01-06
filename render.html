@@ -6,13 +6,12 @@
     <title>Path Tracer Verification Suite (Kahan + Block Sum)</title>
     <style>
         :root { --bg: #050505; --panel: #111; --text: #ccc; --accent: #00ff00; --err: #ff4444; }
-        body, html { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+       body, html { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: monospace; min-height: 100vh; display: flex; flex-direction: column; overflow-y: auto; }
         
-        /* LAYOUT GRID */
         #app-container {
-            display: grid;
-            grid-template-rows: min-content min-content 1fr;
-            height: 100%;
+            display: flex;
+            flex-direction: column;
+            height: auto; /* Allow it to grow */
             max-width: 600px;
             margin: 0 auto;
             width: 100%;
@@ -65,15 +64,14 @@
         button:active { background: var(--accent); color: #000; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        /* 3. BOTTOM: TOOLS & LOGS */
         #tools-area {
             padding: 15px;
             background: var(--bg);
-            overflow-y: auto;
             border-top: 1px solid #333;
             display: flex;
             flex-direction: column;
             gap: 10px;
+            /* Removed overflow/height restrictions so it expands */
         }
         .tool-row { display: flex; gap: 10px; }
         .tool-btn { flex: 1; background: #222; border: 1px solid var(--accent); color: var(--accent); }
@@ -103,10 +101,26 @@
 
     <!-- MIDDLE: CONTROLS -->
     <div id="controls">
+        <!-- NEW CONTROL ROW: SEED FINDER -->
+        <div class="control-grid" style="border-top:1px solid #333; padding-top:10px; margin-top:10px;">
+            <div class="input-group">
+                <label>Search Limit (+)</label>
+                <input id="inp-search-limit" type="number" value="50">
+            </div>
+            <div class="input-group">
+                <label>Max Variance (%)</label>
+                <input id="inp-search-var" type="number" value="5.0">
+            </div>
+            <div class="input-group">
+                <label>Auto-Scan</label>
+                <button id="btn-find-trigger" style="background:#222; border-color:#555;">🔍 FIND SEED</button>
+                <input type="file" id="inp-find-file" class="file-input" accept=".txt">
+            </div>
+        </div>
         <div class="control-grid">
             <div class="input-group">
                 <label>Target Samples</label>
-                <input id="inp-target" type="number" value="500">
+                <input id="inp-target" type="number" value="5">
             </div>
             <div class="input-group">
                 <label>FPS Limit</label>
@@ -387,6 +401,7 @@
     uniform vec3 uCamRight, uCamUp;
     uniform float uFocalDist, uLensRadius;
     uniform int uNumLights, uMaxBounces, uSeed;
+    uniform int uSamplesPerPass; 
     
     // uAccum is the Sum, uComp is the Kahan Error
     uniform sampler2D uNodes, uPrims, uMats, uLights, uAccum, uComp;
@@ -550,12 +565,11 @@
     void main() {
         rngState = init_rng(gl_FragCoord.xy, uint(uFrame), uint(uSeed));
 
-        // 1. READ PREVIOUS KAHAN DATA
+        // Read previous Data
         vec4 oldSum = texelFetch(uAccum, ivec2(gl_FragCoord.xy), 0);
         vec4 oldComp = texelFetch(uComp, ivec2(gl_FragCoord.xy), 0);
         if (uFrame == 0) { oldSum = vec4(0.0); oldComp = vec4(0.0); }
 
-        // 2. RAY SETUP
         vec2 jitter = vec2(rand(), rand()) - 0.5;
         vec2 uv = (gl_FragCoord.xy + jitter) / uRes;
         vec3 target = uCamBL + uCamH * uv.x + uCamV * uv.y; 
@@ -571,7 +585,6 @@
         vec3 acc = vec3(0.0); vec3 att = vec3(1.0); 
         bool lastBounceSpecular = true;
 
-        // 3. PATH TRACING
         for (int depth = 0; depth < uMaxBounces; depth++) {
             Hit hit;
             if (!traverse(r, hit, MAX_FLOAT)) {
@@ -597,11 +610,8 @@
                 bool tir = sin2T > 1.0; 
                 bool doReflect = tir || (F > rand());
                 
-                // SAFER BIAS (0.01) to prevent mobile artifacts vs PC precision
-                if (doReflect) { 
-                    nextDir = reflect(r.d, surf.n); 
-                    r.o = surf.p + surf.n * 0.01; 
-                } else {
+                if (doReflect) { nextDir = reflect(r.d, surf.n); r.o = surf.p + surf.n * 0.01; } 
+                else {
                     float cosT = safe_sqrt(1.0 - sin2T);
                     nextDir = r.d * eta + surf.n * (eta * cosI - cosT);
                     nextDir = normalize(nextDir);
@@ -611,11 +621,7 @@
                 r.d = nextDir; r.invD = safeInverse(r.d);
 
             } else {
-                if (uNumLights > 0) {
-                    // (Lighting Code Omitted for brevity - keeps existing logic)
-                    // Assume standard NEE implementation here or copy from previous full version
-                    // ... [Same NEE Logic] ...
-                    // For the sake of the fix, I'll paste the compact NEE:
+                 if (uNumLights > 0) {
                     int lIdx = int(floor(rand() * float(uNumLights))); lIdx = min(lIdx, uNumLights - 1); int lPrim = getLightIdx(lIdx);
                     vec4 lp0 = getP(lPrim, 0); vec4 lp1 = getP(lPrim, 1); vec4 lp2 = getP(lPrim, 2); vec4 lp3 = getP(lPrim, 3); vec4 lp5 = getP(lPrim, 5);
                     vec3 lightNormal = lp3.xyz; float lightArea = lp1.x; vec3 lightPoint = lp0.yzw + lp1.yzw * rand() + lp2.yzw * rand();
@@ -626,18 +632,16 @@
                         vec3 vis = getVisibility(shadowRay, dist - 2.0 * EPSILON);
                         if (dot(vis, vis) > 0.0) {
                             float pdf = dist * dist / (lightArea * lightCos * float(uNumLights));
-                            float bsdfPdf = NdotL / PI; // Simplified for robustness
                             if (pdf > 0.0) acc += att * getMat(toInt(lp5.y)).emissive * (mat.albedo / PI) * NdotL * vis / pdf;
                         }
                     }
                 }
 
-                // Metal/Diffuse Logic
                 if (isMetal) {
                     lastBounceSpecular = true; vec3 H = sample_ggx(surf.n, mat.rough); nextDir = reflect(-V, H);
                     if (dot(nextDir, surf.n) <= 0.0) nextDir = sample_cosine(surf.n); att *= mat.albedo;
                 } else {
-                    float F = fresnel_schlick(clamp(dot(V, surf.n), 0.0, 1.0), 1.5) * (1.0 - mat.rough); // Simplified F
+                    float F = fresnel_schlick(clamp(dot(V, surf.n), 0.0, 1.0), 1.5) * (1.0 - mat.rough); 
                     if (rand() < F) { lastBounceSpecular = true; nextDir = reflect(r.d, surf.n); } 
                     else { lastBounceSpecular = false; nextDir = sample_cosine(surf.n); att *= mat.albedo; }
                 }
@@ -648,15 +652,9 @@
             if (depth > 3) { float p = max(att.r, max(att.g, att.b)); if (rand() > p) break; att /= p; }
         }
         
-        // 4. FIREFLY CLAMPING (CRITICAL FIX)
-        // We limit the energy of a single sample to 5.0. 
-        // This stops "Lucky Rays" from creating 400% variance.
         acc = min(acc, vec3(5.0));
-
-        // 5. NaN Check
         if (dot(acc, acc) < 0.0 || isnan(dot(acc, acc))) acc = vec3(0.0);
-
-        // 6. CANARY LOGIC
+        
         int pixelIndex = int(gl_FragCoord.y) * int(uRes.x) + int(gl_FragCoord.x);
         if ((pixelIndex % 1009) == 0) {
             uint h = pcg_hash(uint(pixelIndex) ^ uint(uSeed));
@@ -664,18 +662,20 @@
             oldComp = vec4(0.0);
         }
 
-        // 7. KAHAN SUMMATION
         vec3 y = acc - oldComp.rgb;
         vec3 t = oldSum.rgb + y;
         vec3 c = (t - oldSum.rgb) - y;
         outColor = vec4(t, 1.0);
         outComp = vec4(c, 1.0);
     }`;
-
     const displayVs = `#version 300 es
-    in vec2 pos; out vec2 uv; void main() { uv = pos * 0.5 + 0.5; gl_Position = vec4(pos, 0, 1); }`;
+    in vec2 pos; out vec2 uv; void main() { 
+        // Flip Y for display so image is upright
+        uv = vec2(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5)); 
+        gl_Position = vec4(pos, 0, 1); 
+    }`;
     
-    // MODIFIED DISPLAY: Explicit flooring for mobile precision
+    // MODIFIED DISPLAY: Hides Canaries using Texture Coordinates
     const displayFs = `#version 300 es
     precision highp float; 
     precision highp int;
@@ -691,21 +691,28 @@
     vec3 aces(vec3 x) { const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14; return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0); }
     
     void main() { 
-        // ROBUST INDEXING: 
-        // Mobile GPUs need explicit floor() before casting to int
-        // to avoid off-by-one errors in coordinate reading.
-        int x = int(floor(gl_FragCoord.x));
-        int y = int(floor(gl_FragCoord.y));
-        int idx = y * int(uRes.x) + x;
+        // 1. Convert UV (0.0 to 1.0) to Integer Texture Coordinates (0 to Width)
+        // This ensures we are talking about the Buffer's memory layout, not the Screen's layout.
+        ivec2 coord = ivec2(floor(uv * uRes));
         
-        vec2 sampleUV = uv;
+        // Safety clamp to prevent 1-off errors at the exact edge
+        coord.x = clamp(coord.x, 0, int(uRes.x) - 1);
+        coord.y = clamp(coord.y, 0, int(uRes.y) - 1);
 
-        // Hide Canary
+        // 2. Calculate the Linear Index in Memory
+        // This matches exactly how the Path Tracer generated the data
+        int idx = coord.y * int(uRes.x) + coord.x;
+        
+        // 3. CHECK: Is this a Canary?
         if ((idx % 1009) == 0) {
-            sampleUV = uv + vec2(1.0 / uRes.x, 0.0);
+            // HIDE IT: Shift our reading coordinate 1 pixel to the right
+            coord.x = min(coord.x + 1, int(uRes.x) - 1);
         }
 
-        vec4 data = texture(tex, sampleUV);
+        // 4. Read Data using texelFetch (No interpolation, exact data)
+        vec4 data = texelFetch(tex, coord, 0);
+        
+        // 5. Tone Mapping
         vec3 c = data.rgb / max(1.0, uTotalSamples); 
         c = aces(c); 
         c = pow(c, vec3(1.0 / 2.2)); 
@@ -731,7 +738,12 @@
     }
 
     function initGL() {
-        gl = canvas.getContext("webgl2", { powerPreference: "high-performance", alpha: false, preserveDrawingBuffer: true });
+        gl = canvas.getContext("webgl2", { 
+    powerPreference: "high-performance", 
+    alpha: false, 
+    preserveDrawingBuffer: true,
+
+});
         gl.getExtension("EXT_color_buffer_float"); gl.getExtension("OES_texture_float_linear");
         ptProg = createProg(vsSource, fsSource); dispProg = createProg(displayVs, displayFs);
         vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -807,29 +819,21 @@
         gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0, 0, 0, 1);
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); gl.clear(gl.COLOR_BUFFER_BIT); 
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); gl.clear(gl.COLOR_BUFFER_BIT); 
-        loop(0);
+   
     }
 
-    // 5. RENDER LOOP
-    function loop(now) {
-        if (now - lastFrameTime < fpsInterval) { requestAnimationFrame(loop); return; }
-        lastFrameTime = now;
+// === UNIFORM CACHE ===
+    let uLoc = null;
+    let dLoc = null;
+    let syncObject = null;
 
-        if (frameCount >= targetSamples) {
-            if (isRunning) {
-                isRunning = false;
-                self.postMessage({ status: "finished" });
-                gl.finish();
-                // Read Sum from current Accumulator
-                let fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB, 0);
-                let pixels = new Float32Array(width * height * 4);
-                gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
-                self.postMessage({ hashData: pixels.buffer }, [pixels.buffer]);
-            }
-            return;
-        }
+    // === DYNAMIC SCHEDULER ===
+    let batchSize = 1; // How many samples per loop? Starts safe.
+    let pendingSync = null; // The Fence
+function setupStaticUniforms() {
+        gl.useProgram(ptProg);
 
+        // Calculate Camera vectors ONCE
         let camPos = [0, -5, -25]; let lookAt = [0, -15, 4];
         let fwd = Vec3.norm(Vec3.sub(lookAt, camPos)); let worldUp = [0, 1, 0];
         let right = Vec3.norm(Vec3.cross(worldUp, fwd)); let up = Vec3.cross(fwd, right);
@@ -839,50 +843,147 @@
         let horizontal = Vec3.mul(right, viewportW * focalDist); let vertical = Vec3.mul(up, viewportH * focalDist);
         let llc = Vec3.sub(Vec3.add(camPos, Vec3.mul(fwd, focalDist)), Vec3.add(Vec3.mul(horizontal, 0.5), Vec3.mul(vertical, 0.5)));
 
+        // Upload all static uniforms ONCE
+        gl.uniform2f(uLoc.res, width * 1.0, height * 1.0);
+        gl.uniform1i(uLoc.maxBounces, maxBounces);
+        gl.uniform1i(uLoc.seed, userSeed);
+        gl.uniform3fv(uLoc.camPos, camPos);
+        gl.uniform3fv(uLoc.camBL, llc);
+        gl.uniform3fv(uLoc.camH, horizontal);
+        gl.uniform3fv(uLoc.camV, vertical);
+        gl.uniform3fv(uLoc.camRight, right);
+        gl.uniform3fv(uLoc.camUp, up);
+        gl.uniform1f(uLoc.focalDist, focalDist);
+        gl.uniform1f(uLoc.lensRadius, lensRadius);
+        gl.uniform1i(uLoc.numLights, lightIndices.length);
+
+        // Bind scene data textures to their slots ONCE
+        // Bind scene data textures to their slots ONCE
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texNodes);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texPrims);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, texMats);
+        gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, texLights);
+        gl.uniform1i(uLoc.nodes, 0); 
+        gl.uniform1i(uLoc.prims, 1);
+        gl.uniform1i(uLoc.mats, 2); 
+        gl.uniform1i(uLoc.lights, 3);
+    }
+    function loop() {
+        if (!isRunning) return;
+
+        // 1. SYNC CHECK (Anti-Freeze)
+        // If GPU is still busy from the last batch, yield immediately.
+        if (pendingSync) {
+            let status = gl.clientWaitSync(pendingSync, 0, 0);
+            if (status === gl.TIMEOUT_EXPIRED) {
+                // GPU is busy. Reduce batch size slightly to recover responsiveness.
+                if (batchSize > 1) batchSize--;
+                setTimeout(loop, 0); 
+                return;
+            } else {
+                // GPU is free. We can ramp up the load.
+                // Cap increased to 2000 to maximize GPU Utilization.
+                if (batchSize < 2000) batchSize++; 
+                gl.deleteSync(pendingSync);
+                pendingSync = null;
+            }
+        }
+
+        // 2. RENDER BATCH
         gl.useProgram(ptProg);
-        gl.uniform2f(gl.getUniformLocation(ptProg, "uRes"), width * 1.0, height * 1.0);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uFrame"), frameCount);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uMaxBounces"), maxBounces);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uSeed"), userSeed);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamPos"), camPos);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamBL"), llc);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamH"), horizontal);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamV"), vertical);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamRight"), right);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamUp"), up);
-        gl.uniform1f(gl.getUniformLocation(ptProg, "uFocalDist"), focalDist);
-        gl.uniform1f(gl.getUniformLocation(ptProg, "uLensRadius"), lensRadius);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uNumLights"), lightIndices.length);
-
-        [texNodes, texPrims, texMats, texLights].forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uNodes"), 0); gl.uniform1i(gl.getUniformLocation(ptProg, "uPrims"), 1);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uMats"), 2); gl.uniform1i(gl.getUniformLocation(ptProg, "uLights"), 3);
         
-        // Kahan Binding: Read from previous
-        let readSum  = frameCount % 2 === 0 ? texB : texA;
-        let readComp = frameCount % 2 === 0 ? texCompB : texCompA;
-        gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, readSum);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uAccum"), 4);
-        gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, readComp);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uComp"), 5);
-
-        // Write to next
-        gl.bindFramebuffer(gl.FRAMEBUFFER, frameCount % 2 === 0 ? fbA : fbB);
+        // Note: Viewport is persistent if target sizes don't change, 
+        // but we set it once here just to be safe.
         gl.viewport(0, 0, width, height);
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.useProgram(dispProg);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, frameCount % 2 === 0 ? texA : texB);
-        gl.uniform1i(gl.getUniformLocation(dispProg, "tex"), 0);
-        gl.uniform1f(gl.getUniformLocation(dispProg, "uTotalSamples"), frameCount + 1);
-        gl.uniform2f(gl.getUniformLocation(dispProg, "uRes"), width * 1.0, height * 1.0);
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        // INNER LOOP: This is the critical "Hot Path"
+        // We stripped everything out except the absolute necessities for ping-ponging.
+        for(let i=0; i<batchSize; i++) {
+            if (frameCount >= targetSamples) break;
 
-        self.postMessage({ frame: frameCount + 1 });
-        frameCount++;
-        requestAnimationFrame(loop);
+            // Determine Ping-Pong Targets
+            let readSum  = frameCount % 2 === 0 ? texB : texA;
+            let readComp = frameCount % 2 === 0 ? texCompB : texCompA;
+            let writeFb  = frameCount % 2 === 0 ? fbA : fbB;
+
+            // Update Dynamic Uniforms (Frame Count)
+            gl.uniform1i(uLoc.frame, frameCount);
+            
+            // Update Dynamic Texture Bindings (Accumulators)
+            // Slots 0,1,2,3 are already bound to Scene Data (Nodes, Prims, Mats, Lights)
+            gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, readSum);
+            gl.uniform1i(uLoc.accum, 4);
+            
+            gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, readComp);
+            gl.uniform1i(uLoc.comp, 5);
+
+            // Bind Write Target and Draw
+            gl.bindFramebuffer(gl.FRAMEBUFFER, writeFb);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            frameCount++;
+        }
+
+        // 3. SET FENCE
+        // "Tell me when this batch is actually done"
+        pendingSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        gl.flush(); 
+
+        // 4. CHECK FOR COMPLETION
+        if (frameCount >= targetSamples) {
+            isRunning = false;
+            
+            // --- BAKE FINAL IMAGE ---
+            // A. Create 8-bit texture for display
+            let bakeTex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, bakeTex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+            let bakeFb = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, bakeTex, 0);
+
+            // B. Run Display Shader (Tone Mapping + Canary Hiding)
+            gl.useProgram(dispProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB);
+            
+            if (dLoc) {
+                gl.uniform1i(dLoc.tex, 0);
+                gl.uniform1f(dLoc.samples, frameCount);
+                gl.uniform2f(dLoc.res, width * 1.0, height * 1.0);
+            }
+
+            gl.viewport(0, 0, width, height);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            // C. Read 8-bit Display Pixels (Visuals)
+            let displayPixels = new Uint8Array(width * height * 4);
+            gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, displayPixels);
+
+            // D. Read 32-bit Raw Pixels (Data/Validation)
+            // We read directly from the Accumulator FB to get the Kahan sums
+            let rawFb = gl.createFramebuffer(); 
+            gl.bindFramebuffer(gl.FRAMEBUFFER, rawFb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB, 0);
+            let rawPixels = new Float32Array(width * height * 4);
+            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, rawPixels);
+
+            // E. Send to Main Thread
+            self.postMessage({ 
+                status: "finished", 
+                imgData: displayPixels.buffer, 
+                hashData: rawPixels.buffer 
+            }, [displayPixels.buffer, rawPixels.buffer]);
+            
+            return;
+        }
+
+        // 5. SCHEDULE NEXT
+        // Use setTimeout 0 to yield to the UI thread, ensuring responsiveness
+        setTimeout(loop, 0);
     }
 
     self.onmessage = function(e) {
@@ -892,11 +993,49 @@
         if (e.data.start) {
             targetSamples = e.data.target; maxBounces = e.data.bounces; 
             userSeed = e.data.seed; fpsInterval = 1000 / e.data.fps; 
-            buildScene(); initGL();
+            
+            buildScene(); 
+            initGL(); // Creates programs, but DOES NOT start loop
+            
+            // 1. DEFINE UNIFORM LOCATIONS (The Cache)
+            uLoc = {
+                res: gl.getUniformLocation(ptProg, "uRes"),
+                frame: gl.getUniformLocation(ptProg, "uFrame"),
+                accum: gl.getUniformLocation(ptProg, "uAccum"),
+                comp: gl.getUniformLocation(ptProg, "uComp"),
+                maxBounces: gl.getUniformLocation(ptProg, "uMaxBounces"),
+                seed: gl.getUniformLocation(ptProg, "uSeed"),
+                camPos: gl.getUniformLocation(ptProg, "uCamPos"),
+                camBL: gl.getUniformLocation(ptProg, "uCamBL"),
+                camH: gl.getUniformLocation(ptProg, "uCamH"),
+                camV: gl.getUniformLocation(ptProg, "uCamV"),
+                camRight: gl.getUniformLocation(ptProg, "uCamRight"),
+                camUp: gl.getUniformLocation(ptProg, "uCamUp"),
+                focalDist: gl.getUniformLocation(ptProg, "uFocalDist"),
+                lensRadius: gl.getUniformLocation(ptProg, "uLensRadius"),
+                numLights: gl.getUniformLocation(ptProg, "uNumLights"),
+                nodes: gl.getUniformLocation(ptProg, "uNodes"),
+                prims: gl.getUniformLocation(ptProg, "uPrims"),
+                mats: gl.getUniformLocation(ptProg, "uMats"),
+                lights: gl.getUniformLocation(ptProg, "uLights")
+            };
+            
+            dLoc = {
+                tex: gl.getUniformLocation(dispProg, "tex"),
+                samples: gl.getUniformLocation(dispProg, "uTotalSamples"),
+                res: gl.getUniformLocation(dispProg, "uRes")
+            };
+            
+            // 2. UPLOAD STATIC DATA
+            setupStaticUniforms(); 
+
+            // 3. RESET STATE
             frameCount = 0; isRunning = true;
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); gl.clear(gl.COLOR_BUFFER_BIT);
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); gl.clear(gl.COLOR_BUFFER_BIT);
-            loop(0);
+            
+            // 4. START LOOP SAFELY
+            loop(); 
         }
     };
 </script>
@@ -909,9 +1048,13 @@
     const RENDER_W = 400, RENDER_H = 400;
 
     canvas.width = RENDER_W; canvas.height = RENDER_H;
-    let offscreen;
-    try { offscreen = canvas.transferControlToOffscreen(); } catch(e) { alert("Use a modern browser (Chrome/Edge/FF)"); }
+    // 1. Get a 2D context for the visible canvas (Main Thread owns this now)
+    const ctx = canvas.getContext("2d");
     
+    // 2. Create a "Ghost" canvas for the worker (Headless)
+    const offscreen = new OffscreenCanvas(RENDER_W, RENDER_H);
+    
+    // 3. Send the Ghost canvas to the worker
     worker.postMessage({ init: true, canvas: offscreen, width: RENDER_W, height: RENDER_H }, [offscreen]);
 
     // UI ELEMENTS
@@ -923,7 +1066,14 @@
     const inpFile = document.getElementById("inp-file");
 
     let lastRawData = null; // Stores Float32Array
-
+// === SEARCH STATE VARIABLES ===
+    let isSearching = false;
+    let searchCurrentSeed = 0;
+    let searchEndSeed = 0;
+    let minVar = 100;
+    let searchVarThreshold = 5.0;
+    let targetCanaries = new Map();
+    let targetBlocks = [];
     btnRestart.onclick = () => {
         btnRestart.disabled = true;
         btnDownload.disabled = true;
@@ -943,14 +1093,111 @@
 
     worker.onmessage = (e) => {
         if (e.data.frame) {
-            statusDisp.textContent = `Samples: ${e.data.frame}`;
+            // Only update UI text if NOT searching (optimization)
+            if (!isSearching) statusDisp.textContent = `Samples: ${e.data.frame}`;
+            else statusDisp.textContent = `Scanning Seed ${searchCurrentSeed}...`;
         }
+        
         if (e.data.status === "finished") {
-            btnRestart.disabled = false;
-            statusDisp.textContent = "Finished. Processing Data...";
+            if (e.data.imgData) {
+                const img = new ImageData(new Uint8ClampedArray(e.data.imgData), RENDER_W, RENDER_H);
+                ctx.putImageData(img, 0, 0);
+            }
+            // --------
+            if (!isSearching) {
+                btnRestart.disabled = false;
+                statusDisp.textContent = "Finished.";
+            }
+            // If searching, we don't enable buttons yet, we wait for hash check
         }
+        
         if (e.data.hashData) {
             lastRawData = new Float32Array(e.data.hashData);
+
+            // === SEARCH LOGIC INTERCEPTION ===
+            if (isSearching) {
+                // 1. Check Canaries (Fast Rejection)
+                let canaryFail = 0;
+                let samples = parseInt(document.getElementById("inp-target").value);
+                
+                // Helper to calc expected value for CURRENT seed
+                const getCanaryExp = (idx, seed) => {
+                    let state = (BigInt(idx) ^ BigInt(seed)) * 747796405n + 2891336453n;
+                    state = BigInt.asUintN(32, state);
+                    let word = ((state >> ((state >> 28n) + 4n)) ^ state) * 277803737n;
+                    word = BigInt.asUintN(32, word);
+                    return ((Number(BigInt.asUintN(32, (word >> 22n) ^ word)) & 0xFF) / 255.0) * samples;
+                };
+
+                targetCanaries.forEach((val, idx) => {
+                    // Check against the seed we just rendered
+                    if (Math.abs(val - getCanaryExp(idx, searchCurrentSeed)) > 0.5) canaryFail++;
+                });
+
+                // 2. If Canaries Passed, Check Variance
+                let avgVar = 100.0;
+                if (1 === 1) {
+                    let totalDiff = 0, count = 0, bIdx = 0;
+                    const B_SZ = 16;
+                    for (let by = 0; by < RENDER_H; by += B_SZ) {
+                        for (let bx = 0; bx < RENDER_W; bx += B_SZ) {
+                            let gSum = [0,0,0];
+                            for (let y=0; y<B_SZ; y++) {
+                                for (let x=0; x<B_SZ; x++) {
+                                    let p = (by+y)*RENDER_W + (bx+x);
+                                    if ((p%1009)===0) continue;
+                                    let i = p*4;
+                                    gSum[0]+=lastRawData[i]; gSum[1]+=lastRawData[i+1]; gSum[2]+=lastRawData[i+2];
+                                }
+                            }
+                            if (bIdx < targetBlocks.length) {
+                                let f = targetBlocks[bIdx];
+                                let diff = Math.abs(gSum[0]-f[0]) + Math.abs(gSum[1]-f[1]) + Math.abs(gSum[2]-f[2]);
+                                totalDiff += diff / (f[0]+f[1]+f[2]+1.0);
+                                count++;
+                            }
+                            bIdx++;
+                        }
+                    }
+                    avgVar = (totalDiff / count) * 100;
+                }
+                if (avgVar < minVar) {
+                    minVar = avgVar;
+                    logOut.innerHTML += `\nAvg: ${avgVar.toFixed(2)}%`;
+                }
+            
+                // 3. Decision
+                if (avgVar <= searchVarThreshold) {
+                    // MATCH FOUND!
+                    isSearching = false;
+                    btnRestart.disabled = false;
+                    logOut.innerHTML += `\n<span class="stat-hi">MATCH FOUND!</span>\nSeed: ${searchCurrentSeed}\nVariance: ${avgVar.toFixed(2)}%`;
+                    document.getElementById("inp-seed").value = searchCurrentSeed;
+                    statusDisp.textContent = `Found: ${searchCurrentSeed}`;
+                } else {
+                    // NO MATCH - NEXT SEED
+                    if (searchCurrentSeed < searchEndSeed) {
+                        searchCurrentSeed++;
+                        // Trigger Next Render
+                        worker.postMessage({ 
+                            start: true,
+                            target: parseInt(document.getElementById("inp-target").value),
+                            fps: 999, // Max speed for searching
+                            bounces: parseInt(document.getElementById("inp-bounce").value),
+                            seed: searchCurrentSeed
+                        });
+                    } else {
+                        // END OF LIST
+                        isSearching = false;
+                        btnRestart.disabled = false;
+                        statusDisp.textContent = "Search Failed";
+                        logOut.innerHTML += `\n<span class="stat-err">Search ended. No match found.</span>`;
+                    }
+                }
+                return; // Stop here, don't run default UI
+            }
+            // === END SEARCH LOGIC ===
+
             statusDisp.textContent = "Ready";
             btnDownload.disabled = false;
             btnCompareTrigger.disabled = false;
@@ -1156,6 +1403,68 @@
             logOut.innerHTML = html;
             statusDisp.textContent = "Done";
             inpFile.value = "";
+        };
+        reader.readAsText(file);
+    };
+
+    // === SEED FINDER HANDLERS ===
+    const btnFindTrigger = document.getElementById("btn-find-trigger");
+    const inpFindFile = document.getElementById("inp-find-file");
+
+    btnFindTrigger.onclick = () => inpFindFile.click();
+
+    inpFindFile.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Reset State
+        targetCanaries.clear();
+        targetBlocks = [];
+        
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const lines = evt.target.result.split("\n");
+            
+            // 1. Parse Target Data
+            for (let line of lines) {
+                line = line.trim();
+                if (line.startsWith("CANARIES:")) {
+                    let raw = line.substring(9).split("|");
+                    for (let c of raw) {
+                        let p = c.split(":");
+                        let v = p[1].split(",");
+                        targetCanaries.set(parseInt(p[0]), parseFloat(v[0])); // Red Channel
+                    }
+                } else if (line.includes("|") && !line.includes("FORMAT") && !line.includes("BLOCKSIZE")) {
+                    let parts = line.split("|")[1].split(",");
+                    targetBlocks.push([parseFloat(parts[0]), parseFloat(parts[1]), parseFloat(parts[2])]);
+                }
+            }
+
+            if (targetCanaries.size === 0) { alert("Invalid file (No canaries)."); return; }
+
+            // 2. Init Search
+            let startSeed = parseInt(document.getElementById("inp-seed").value);
+            let limit = parseInt(document.getElementById("inp-search-limit").value);
+            
+            isSearching = true;
+            searchCurrentSeed = startSeed;
+            searchEndSeed = startSeed + limit;
+            searchVarThreshold = parseFloat(document.getElementById("inp-search-var").value);
+            
+            // Disable UI
+            btnRestart.disabled = true;
+            btnDownload.disabled = true;
+            logOut.innerHTML = `Starting Seed Search...\nRange: ${startSeed} to ${searchEndSeed}\nTarget Var: <${searchVarThreshold}%`;
+
+            // 3. Start First Render
+            worker.postMessage({ 
+                start: true,
+                target: parseInt(document.getElementById("inp-target").value),
+                fps: 999, // Render as fast as possible
+                bounces: parseInt(document.getElementById("inp-bounce").value),
+                seed: searchCurrentSeed
+            });
         };
         reader.readAsText(file);
     };
