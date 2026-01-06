@@ -565,6 +565,11 @@ input:checked + .slider:before { transform: translateX(30px); }
     color: #28a745; /* Green */
     text-shadow: 0 0 10px rgba(40, 167, 69, 0.4); 
 }
+/* Inactive State = RED for Real Time Toggle */
+.renderer-label.inactive-red { 
+    color: #d93025; /* Red */
+    text-shadow: 0 0 10px rgba(217, 48, 37, 0.4); 
+}
     </style>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.11.1/sha256.min.js"></script>
 </head>
@@ -624,7 +629,27 @@ input:checked + .slider:before { transform: translateX(30px); }
                 <div class="user-config-box" style="flex: 1; max-width: 500px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #2a2a2a; border-radius: 12px; padding: 20px; border: 1px solid #444; margin-top: 1.2rem;">
                     <h3 style="margin-top: 0; color: #fff;">User Configuration</h3>
           
-                    <!-- Moved Render Toggle with Warning Tooltip -->
+                   
+<div id="realtimeContainer" class="renderer-toggle-container" style="margin-bottom: 20px; opacity: 0.5; pointer-events: none;">
+                       
+                        <span id="realtimeLabel" class="renderer-label inactive-red">Real Time</span>
+                        <label class="switch">
+                            <input type="checkbox" id="realtimeToggle">
+                            <span class="slider"></span>
+                        </label>
+                        
+                        <div class="info-icon" tabindex="0" style="margin-left: 10px; width: 18px; height: 18px; font-size: 12px; border-color: #666; color: #aaa;">
+                            ?
+                            <div class="tooltip-content">
+                                <strong style="color: #d93025;">Performance Warning</strong><br><br>
+                                By default, the render is <strong>hidden</strong> until finished to maximize speed.<br><br>
+                                Enable this to see the image converge in real-time (updates every 5 frames).<br><br>
+                                <strong>This will hinder render performance by a huge margin.</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                   
                     <div class="renderer-toggle-container" style="margin-bottom: 20px;">
                         <span id="labelCPU" class="renderer-label active">CPU</span>
                         <label class="switch">
@@ -633,7 +658,6 @@ input:checked + .slider:before { transform: translateX(30px); }
                         </label>
                         <span id="labelGPU" class="renderer-label">GPU (WIP)</span>
                         
-                        <!-- Added Warning Icon -->
                         <div class="info-icon" tabindex="0" style="margin-left: 0px; width: 18px; height: 18px; font-size: 12px; border-color: #666; color: #aaa;">
                             ?
                             <div class="tooltip-content">
@@ -681,7 +705,7 @@ input:checked + .slider:before { transform: translateX(30px); }
     
     <div class="leaderboard-controls">
         
-        <!-- 1. The New CPU/GPU Slider -->
+       
         <div class="lb-toggle-container">
             <span id="lblLbCPU" class="lb-label active">CPU</span>
             <label class="switch">
@@ -691,7 +715,7 @@ input:checked + .slider:before { transform: translateX(30px); }
             <span id="lblLbGPU" class="lb-label">GPU</span>
         </div>
 
-        <!-- 2. The Existing Verified/Pending Toggle -->
+        
         <div class="toggle-wrapper verified-mode" id="lbToggle">
             <span class="toggle-label active" id="lblVerified">Verified</span>
             <div class="toggle-switch">
@@ -765,76 +789,32 @@ input:checked + .slider:before { transform: translateX(30px); }
 		<!-- <p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p> -->
     </div>
     <script id="gpu-worker-source" type="javascript/worker">
-    // === WORKER GLOBALS ===
-    let canvas, gl;
+    // === WEBGPU WORKER GLOBALS ===
+    let device, pipeline, bindGroup;
     let width, height;
     let frameCount = 0;
     let isRunning = true;
     
-    // Performance / Fencing Globals
-    let batchSize = 2; 
-    let pendingSync = null;
-    
-    // Settings
+    // Performance settings
+    let batchSize = 1; 
     let targetSamples = 10;
     let maxBounces = 8;
+    let realtime = false; // New flag
     let userSeedLo = 0;
     let userSeedHi = 0;
     
+    // Data Buffers
+    let bufNodes, bufPrims, bufMats, bufLights, bufUniforms;
+    let bufAccum, bufResult, bufReadback;
+    
+    // Uncapped Loop Mechanism
+    const channel = new MessageChannel();
+    const port = channel.port2;
+
     // Scene Data
     let bvhNodes = [], orderedPrims = [], materials = [], lightIndices = [];
-    let texNodes, texPrims, texMats, texLights; 
-    let texA, texB, texCompA, texCompB;
-    let fbA, fbB; 
-    let ptProg, dispProg;
 
-    // --- PCG 64-BIT EMULATION FOR GLSL ---
-    const pcgGlsl = `
-    uniform uvec2 uGlobalSeed; // [Low, High]
-    struct PCG_State { uvec2 state; uvec2 inc; };
-    PCG_State pcg_state;
-    uvec2 add64(uvec2 a, uvec2 b) {
-        uint lo = a.x + b.x;
-        uint carry = (lo < a.x) ? 1u : 0u;
-        uint hi = a.y + b.y + carry;
-        return uvec2(lo, hi);
-    }
-    uvec2 mul64(uvec2 a, uvec2 b) {
-        uint lo = a.x * b.x;
-        uint t1 = a.x * b.y; uint t2 = a.y * b.x;
-        uint a_lo = a.x & 0xFFFFu; uint a_hi = a.x >> 16u;
-        uint b_lo = b.x & 0xFFFFu; uint b_hi = b.x >> 16u;
-        uint p0 = a_lo * b_lo; uint p1 = a_lo * b_hi; uint p2 = a_hi * b_lo;
-        uint cy = (p0 >> 16u) + (p1 & 0xFFFFu) + (p2 & 0xFFFFu);
-        uint hi_carry = cy >> 16u; uint hi = t1 + t2 + hi_carry;
-        return uvec2(lo, hi);
-    }
-    const uvec2 PCG_MULT = uvec2(0x4C957F2Du, 0x5851F42Du);
-    void reset_prng_for_tile(int x, int y, int width) {
-        uvec2 seed_mix = mul64(uGlobalSeed, PCG_MULT);
-        uvec2 pixel_index = uvec2(uint(y * width + x), 0u);
-        uvec2 p1 = add64(pixel_index, uvec2(1u, 0u));
-        pcg_state.state = uvec2(p1.x ^ seed_mix.x, p1.y ^ seed_mix.y);
-        uvec2 p2 = uvec2(pixel_index.x << 1u, pixel_index.y << 1u | (pixel_index.x >> 31u));
-        p2 = add64(p2, uvec2(1u, 0u));
-        pcg_state.inc = uvec2(p2.x ^ seed_mix.x, p2.y ^ seed_mix.y);
-    }
-    uint pcg32_random() {
-        uvec2 oldstate = pcg_state.state;
-        uvec2 mul = mul64(oldstate, PCG_MULT);
-        uvec2 inc_or_1 = uvec2(pcg_state.inc.x | 1u, pcg_state.inc.y);
-        pcg_state.state = add64(mul, inc_or_1);
-        uint xs_lo = (oldstate.x >> 18u) | (oldstate.y << 14u);
-        uint xs_hi = (oldstate.y >> 18u);
-        uint xor_lo = xs_lo ^ oldstate.x; uint xor_hi = xs_hi ^ oldstate.y;
-        uint rot_base = (xor_lo >> 27u) | (xor_hi << 5u);
-        uint rot = oldstate.y >> 27u; 
-        return (rot_base >> rot) | (rot_base << ((-rot) & 31u));
-    }
-    float rand() { return float(pcg32_random()) / 4294967296.0; }
-    `;
-
-    // 1. SCENE BUILDER
+    // --- 1. SCENE BUILDER (Standard Logic) ---
     function buildScene() {
         primitives = []; bvhNodes = []; materials = []; orderedPrims = []; lightIndices = [];
         let bvhBuildInfo = []; let originalLightPrimIndices = [];
@@ -881,8 +861,27 @@ input:checked + .slider:before { transform: translateX(30px); }
         function strongHash(v) { v^=v>>>15; v=Math.imul(v,0x469e0db1); v^=v>>>17; v=Math.imul(v,0x1b873593); v^=v>>>13; return v>>>0; }
         function getRandomColor(id) {
             let h = strongHash(userSeedLo ^ id);
-            let r=(h&0x3FF)/1023.0, g=((h>>10)&0x3FF)/1023.0, b=((h>>20)&0x3FF)/1023.0;
-            return [0.2+r*0.8, 0.2+g*0.8, 0.2+b*0.8];
+            // FAIRNESS FIX: Use HSV to lock brightness (Value) so render time is deterministic.
+            // Hue = Random, Saturation = 0.75, Value = 0.80
+            let hue = (h & 0xFFFFFF) / 16777216.0;
+            let s = 0.75, v = 0.80; 
+            
+            let i = Math.floor(hue * 6);
+            let f = hue * 6 - i;
+            let p = v * (1 - s);
+            let q = v * (1 - f * s);
+            let t = v * (1 - (1 - f) * s);
+            
+            let r, g, b;
+            switch (i % 6) {
+                case 0: r = v; g = t; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = t; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = t; g = p; b = v; break;
+                case 5: r = v; g = p; b = q; break;
+            }
+            return [r, g, b];
         }
         const white = addMaterial(getRandomColor(1), [0,0,0], 0, 0, 1.5, 0); 
         const red   = addMaterial(getRandomColor(2),   [0,0,0], 0, 0, 1.5, 0); 
@@ -964,313 +963,395 @@ input:checked + .slider:before { transform: translateX(30px); }
         lightIndices = originalLightPrimIndices.map(origIdx => originalToOrdered[origIdx]);
     }
 
-    // 2. SHADERS
-    const vsSource = `#version 300 es
-    in vec2 pos; void main() { gl_Position = vec4(pos, 0, 1); }`;
+    // --- 2. WGSL SHADER (Consolidated Fixes: Parens, Type Checks, Buffer Sizes) ---
+    const wgslSource = `
+    struct Uniforms {
+        res: vec2f,
+        frame: u32,
+        maxBounces: u32,
+        seed: vec2u,
+        camPos: vec3f,
+        camBL: vec3f,
+        camH: vec3f,
+        camV: vec3f,
+        camRight: vec3f,
+        camUp: vec3f,
+        focalDist: f32,
+        lensRadius: f32,
+        numLights: u32
+    }
 
-    const fsSource = `#version 300 es
-    precision highp float; precision highp int;
-    layout(location = 0) out vec4 outColor;
-    layout(location = 1) out vec4 outComp;
-    uniform vec2 uRes; uniform int uFrame; 
-    uniform vec3 uCamPos, uCamBL, uCamH, uCamV;
-    uniform vec3 uCamRight, uCamUp;
-    uniform float uFocalDist, uLensRadius;
-    uniform int uNumLights, uMaxBounces;
-    uniform sampler2D uNodes, uPrims, uMats, uLights, uAccum, uComp;
-    #define PI 3.14159265359
-    #define MAX_FLOAT 1e30
-    #define EPSILON 0.05
-    ${pcgGlsl}
+    struct PixelData {
+        sum: vec4f,
+        comp: vec4f
+    }
     
-    // Structs & Helpers
-    struct Node { vec3 minB; int primOffset; vec3 maxB; int nPrims; int axis; int secondChild; };
-    int toInt(float f) { return int(floor(f + 0.5)); }
-    Node getNode(int i) {
-        vec4 d0 = texelFetch(uNodes, ivec2(0, i), 0); vec4 d1 = texelFetch(uNodes, ivec2(1, i), 0); vec4 d2 = texelFetch(uNodes, ivec2(2, i), 0);
-        return Node(d0.xyz, toInt(d0.w), d1.xyz, toInt(d1.w), toInt(d2.x), toInt(d2.y));
+    struct PCG_State { state: vec2u, inc: vec2u }
+    var<private> pcg_state : PCG_State;
+
+    @group(0) @binding(0) var<uniform> u : Uniforms;
+    @group(0) @binding(1) var<storage, read> nodes : array<f32>;
+    @group(0) @binding(2) var<storage, read> prims : array<f32>;
+    @group(0) @binding(3) var<storage, read> mats : array<f32>;
+    @group(0) @binding(4) var<storage, read> lights : array<f32>;
+    @group(0) @binding(5) var<storage, read_write> accum : array<PixelData>;
+    @group(0) @binding(6) var<storage, read_write> outputBuf : array<vec4f>;
+
+    fn add64(a: vec2u, b: vec2u) -> vec2u {
+        let lo = a.x + b.x;
+        let carry = select(0u, 1u, lo < a.x);
+        let hi = a.y + b.y + carry;
+        return vec2u(lo, hi);
     }
-    vec4 getP(int idx, int off) { return texelFetch(uPrims, ivec2(off, idx), 0); }
-    struct Material { vec3 albedo; vec3 emissive; float metal; float rough; float ior; float trans; };
-    Material getMat(int idx) {
-        vec4 d0 = texelFetch(uMats, ivec2(0, idx), 0); vec4 d1 = texelFetch(uMats, ivec2(1, idx), 0); vec4 d2 = texelFetch(uMats, ivec2(2, idx), 0);
-        return Material(d0.rgb, d1.rgb, d2.x, d2.y, d2.z, d2.w);
+    fn mul64(a: vec2u, b: vec2u) -> vec2u {
+        let lo = a.x * b.x;
+        let t1 = a.x * b.y; let t2 = a.y * b.x;
+        let a_lo = a.x & 0xFFFFu; let a_hi = a.x >> 16u;
+        let b_lo = b.x & 0xFFFFu; let b_hi = b.x >> 16u;
+        let p0 = a_lo * b_lo; let p1 = a_lo * b_hi; let p2 = a_hi * b_lo;
+        let cy = (p0 >> 16u) + (p1 & 0xFFFFu) + (p2 & 0xFFFFu);
+        let hi_carry = cy >> 16u; let hi = t1 + t2 + hi_carry;
+        return vec2u(lo, hi);
     }
-    int getLightIdx(int i) { return toInt(texelFetch(uLights, ivec2(0, i), 0).r); }
-    struct Ray { vec3 o, d, invD; }; struct Hit { float t; int idx; int type; }; struct Surface { vec3 p, n; bool front; int mat; };
-    float pow5(float x) { float x2 = x*x; return x2*x2*x; }
-    float safe_sqrt(float x) { return sqrt(max(0.0, x)); }
-    vec3 safeInverse(vec3 d) {
-        const float eps = 1e-6;
-        return vec3(abs(d.x)>eps?1.0/d.x:(d.x>=0.0?1.0/eps:-1.0/eps), abs(d.y)>eps?1.0/d.y:(d.y>=0.0?1.0/eps:-1.0/eps), abs(d.z)>eps?1.0/d.z:(d.z>=0.0?1.0/eps:-1.0/eps));
+    const PCG_MULT = vec2u(0x4C957F2Du, 0x5851F42Du);
+    fn reset_prng(x: u32, y: u32, w: u32) {
+        let seed_mix = mul64(u.seed, PCG_MULT);
+        let pixel_index = vec2u(y * w + x, 0u);
+        let p1 = add64(pixel_index, vec2u(1u, 0u));
+        pcg_state.state = vec2u(p1.x ^ seed_mix.x, p1.y ^ seed_mix.y);
+        // FIX: Parentheses for Firefox Strictness
+        let p2_raw = vec2u(pixel_index.x << 1u, (pixel_index.y << 1u) | (pixel_index.x >> 31u));
+        let p2 = add64(p2_raw, vec2u(1u, 0u));
+        pcg_state.inc = vec2u(p2.x ^ seed_mix.x, p2.y ^ seed_mix.y);
     }
-    void create_basis(vec3 n, out vec3 t, out vec3 b) { vec3 up = abs(n.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0); t = normalize(cross(up, n)); b = cross(n, t); }
-    float intersect_sphere(int idx, Ray r, float tMin, float tMax) {
-        vec4 p0 = getP(idx, 0); vec4 p1 = getP(idx, 1);
-        vec3 center = p0.yzw; float r2 = p1.x;
-        vec3 oc = r.o - center; float b = dot(oc, r.d); float c = dot(oc, oc) - r2;
-        float disc = b*b - c; if (disc < 0.0) return MAX_FLOAT;
-        float sq = sqrt(disc); float t = -b - sq;
-        if (t > tMin && t < tMax) return t;
-        t = -b + sq; if (t > tMin && t < tMax) return t;
+    fn pcg32_random() -> u32 {
+        let oldstate = pcg_state.state;
+        let mul = mul64(oldstate, PCG_MULT);
+        let inc_or_1 = vec2u(pcg_state.inc.x | 1u, pcg_state.inc.y);
+        pcg_state.state = add64(mul, inc_or_1);
+        let xs_lo = (oldstate.x >> 18u) | (oldstate.y << 14u);
+        let xs_hi = (oldstate.y >> 18u);
+        let xor_lo = xs_lo ^ oldstate.x; let xor_hi = xs_hi ^ oldstate.y;
+        let rot_base = (xor_lo >> 27u) | (xor_hi << 5u);
+        let rot = oldstate.y >> 27u;
+        // FIX: Unary negation on u32
+        return (rot_base >> rot) | (rot_base << ((0u - rot) & 31u));
+    }
+    fn rand() -> f32 { return f32(pcg32_random()) / 4294967296.0; }
+
+    struct Node { minB: vec3f, pOff: i32, maxB: vec3f, nPrims: i32, axis: i32, secChild: i32 }
+    fn getNode(i: i32) -> Node {
+        let b = i * 12;
+        return Node(vec3f(nodes[b], nodes[b+1], nodes[b+2]), i32(nodes[b+3]),
+                    vec3f(nodes[b+4], nodes[b+5], nodes[b+6]), i32(nodes[b+7]),
+                    i32(nodes[b+8]), i32(nodes[b+9]));
+    }
+    struct PrimDat { t: i32, f0: vec4f, f1: vec4f, f2: vec4f, f3: vec4f, f4: vec4f, f5: vec4f }
+    fn getPrim(i: i32) -> PrimDat {
+        let b = i * 24;
+        return PrimDat(i32(prims[b]), 
+            vec4f(prims[b+1], prims[b+2], prims[b+3], prims[b+4]),
+            vec4f(prims[b+5], prims[b+6], prims[b+7], prims[b+8]),
+            vec4f(prims[b+9], prims[b+10], prims[b+11], prims[b+12]),
+            vec4f(prims[b+13], prims[b+14], prims[b+15], prims[b+16]),
+            vec4f(prims[b+17], prims[b+18], prims[b+19], prims[b+20]),
+            vec4f(prims[b+21], prims[b+22], prims[b+23], 0.0));
+    }
+    struct Mat { albedo: vec3f, emissive: vec3f, metal: f32, rough: f32, ior: f32, trans: f32 }
+    fn getMat(i: i32) -> Mat {
+        let b = i * 12;
+        return Mat(vec3f(mats[b], mats[b+1], mats[b+2]), vec3f(mats[b+4], mats[b+5], mats[b+6]), mats[b+8], mats[b+9], mats[b+10], mats[b+11]);
+    }
+    fn getLightIdx(i: i32) -> i32 { return i32(lights[i]); }
+    
+    struct Ray { o: vec3f, d: vec3f, invD: vec3f }
+    struct Hit { t: f32, idx: i32, type_: i32 }
+    struct Surf { p: vec3f, n: vec3f, front: bool, mat: i32 }
+    const MAX_FLOAT = 1e30; const EPS = 0.001; const PI = 3.14159265;
+    
+    fn intersect_sphere(idx: i32, r: Ray, tMax: f32) -> f32 {
+        let p = getPrim(idx); let center = p.f0.xyz; let r2 = p.f0.w;
+        let oc = r.o - center; let b = dot(oc, r.d); let c = dot(oc, oc) - r2;
+        let disc = b*b - c; if (disc < 0.0) { return MAX_FLOAT; }
+        let sq = sqrt(disc); let t1 = -b - sq;
+        if (t1 > EPS && t1 < tMax) { return t1; }
+        let t2 = -b + sq; if (t2 > EPS && t2 < tMax) { return t2; }
         return MAX_FLOAT;
     }
-    float intersect_rect(int idx, Ray r, float tMin, float tMax) {
-        vec4 p0 = getP(idx, 0); vec4 p1 = getP(idx, 1); vec4 p2 = getP(idx, 2);
-        vec4 p3 = getP(idx, 3); vec4 p5 = getP(idx, 5);
-        vec3 normal = p3.xyz; float d = p5.x; float denom = dot(normal, r.d);
-        if (abs(denom) < 1e-4) return MAX_FLOAT;
-        float t = (d - dot(r.o, normal)) / denom;
-        if (t < tMin || t > tMax) return MAX_FLOAT;
-        vec3 p = r.o + r.d * t;
-        vec3 corner = p0.yzw; vec3 v0 = p1.yzw; vec3 v1 = p2.yzw; vec3 v2 = p - corner;
-        float dot00 = dot(v0, v0); float dot01 = dot(v0, v1); float dot02 = dot(v0, v2);
-        float dot11 = dot(v1, v1); float dot12 = dot(v1, v2);
-        float invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01);
-        float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-        float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-        if (u >= -0.01 && v >= -0.01 && u <= 1.01 && v <= 1.01) return t;
+    fn intersect_rect(idx: i32, r: Ray, tMax: f32) -> f32 {
+        let p = getPrim(idx); let n = p.f3.xyz; let d = p.f5.x; let denom = dot(n, r.d);
+        if (abs(denom) < 1e-4) { return MAX_FLOAT; }
+        let t = (d - dot(r.o, n)) / denom;
+        if (t < EPS || t > tMax) { return MAX_FLOAT; }
+        let hit = r.o + r.d * t;
+        let v2 = hit - p.f0.xyz;
+        let dot02 = dot(p.f1.xyz, v2); let dot12 = dot(p.f2.xyz, v2);
+        let u = (p.f4.y * dot02 - p.f4.z * dot12) * p.f4.w;
+        let v = (p.f4.x * dot12 - p.f4.z * dot02) * p.f4.w;
+        if (u >= -0.01 && v >= -0.01 && u <= 1.01 && v <= 1.01) { return t; }
         return MAX_FLOAT;
     }
-    bool traverse(Ray r, inout Hit best, float tMax) {
-        bool hit = false; best.t = tMax; best.idx = -1; int stack[32]; int ptr = 0; int nodeIdx = 0;
-        for(int k = 0; k < 128; k++) { 
-            Node node = getNode(nodeIdx);
-            vec3 t0 = (node.minB - r.o) * r.invD; vec3 t1 = (node.maxB - r.o) * r.invD;
-            vec3 tsmaller = min(t0, t1); vec3 tbigger = max(t0, t1);
-            float tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z); float tm = min(min(tbigger.x, tbigger.y), tbigger.z);
-            if (tm >= max(EPSILON, tmin) && tmin < best.t) {
-                if (node.nPrims > 0) {
-                    for(int i = 0; i < node.nPrims; i++) {
-                        int pIdx = node.primOffset + i;
-                        float typeVal = getP(pIdx, 0).x; int type = toInt(typeVal);
-                        float t = (type == 0) ? intersect_sphere(pIdx, r, EPSILON, best.t) : intersect_rect(pIdx, r, EPSILON, best.t);
-                        if (t < best.t) { hit = true; best.t = t; best.idx = pIdx; best.type = type; }
+
+    fn traverse(r: Ray, best: ptr<function, Hit>) -> bool {
+        var hit = false; (*best).t = MAX_FLOAT; (*best).idx = -1;
+        // FIX: Renamed 'ptr' to 'stackPtr'
+        var stack: array<i32, 32>; var stackPtr = 0; var nodeIdx = 0;
+        for(var k=0; k<128; k++) {
+            let n = getNode(nodeIdx);
+            let t0 = (n.minB - r.o) * r.invD; let t1 = (n.maxB - r.o) * r.invD;
+            let tsm = min(t0, t1); let tbg = max(t0, t1);
+            let tmin = max(max(tsm.x, tsm.y), tsm.z); let tm = min(min(tbg.x, tbg.y), tbg.z);
+            if (tm >= max(EPS, tmin) && tmin < (*best).t) {
+                if (n.nPrims > 0) {
+                    for(var i=0; i<n.nPrims; i++) {
+                        let pIdx = n.pOff + i; let type_ = i32(prims[pIdx * 24]);
+                        var t = MAX_FLOAT;
+                        if (type_ == 0) { t = intersect_sphere(pIdx, r, (*best).t); } 
+                        else { t = intersect_rect(pIdx, r, (*best).t); }
+                        if (t < (*best).t) { hit=true; (*best).t=t; (*best).idx=pIdx; (*best).type_=type_; }
                     }
-                    if (ptr == 0) break; nodeIdx = stack[--ptr];
+                    if (stackPtr == 0) { break; } stackPtr--; nodeIdx = stack[stackPtr];
                 } else {
-                    float dAxis = (node.axis == 0) ? r.d.x : ((node.axis == 1) ? r.d.y : r.d.z);
-                    bool dirNeg = dAxis < 0.0;
-                    int near = dirNeg ? node.secondChild : (nodeIdx + 1); int far = dirNeg ? (nodeIdx + 1) : node.secondChild;
-                    stack[ptr++] = far; nodeIdx = near;
+                    let axis = n.axis;
+                    let dAxis = select(r.d.z, select(r.d.y, r.d.x, axis == 0), axis == 1);
+                    let near = select(nodeIdx + 1, n.secChild, dAxis < 0.0);
+                    let far = select(n.secChild, nodeIdx + 1, dAxis < 0.0);
+                    stack[stackPtr] = far; stackPtr++; nodeIdx = near;
                 }
-            } else { if (ptr == 0) break; nodeIdx = stack[--ptr]; }
+            } else { if (stackPtr == 0) { break; } stackPtr--; nodeIdx = stack[stackPtr]; }
         }
         return hit;
     }
-    vec3 getVisibility(Ray r, float tMax) {
-        vec3 transmission = vec3(1.0); int stack[32]; int ptr = 0; int nodeIdx = 0;
-        for(int k = 0; k < 64; k++) {
-            Node node = getNode(nodeIdx);
-            vec3 t0 = (node.minB - r.o) * r.invD; vec3 t1 = (node.maxB - r.o) * r.invD;
-            float tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
-            float tm = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
-            if (tm >= max(EPSILON, tmin) && tmin < tMax) {
-                if (node.nPrims > 0) {
-                    for(int i = 0; i < node.nPrims; i++) {
-                        int pIdx = node.primOffset + i; int type = toInt(getP(pIdx, 0).x);
-                        float t = (type == 0) ? intersect_sphere(pIdx, r, EPSILON, tMax) : intersect_rect(pIdx, r, EPSILON, tMax);
+    
+    fn getVisibility(r: Ray, tMax: f32) -> vec3f {
+        // FIX: Renamed 'ptr' to 'stackPtr'
+        var trans = vec3f(1.0); var stack: array<i32, 32>; var stackPtr = 0; var nodeIdx = 0;
+        for(var k=0; k<64; k++) {
+            let n = getNode(nodeIdx);
+            let t0 = (n.minB - r.o) * r.invD; let t1 = (n.maxB - r.o) * r.invD;
+            let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+            let tm = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+            if (tm >= max(EPS, tmin) && tmin < tMax) {
+                if (n.nPrims > 0) {
+                    for(var i=0; i<n.nPrims; i++) {
+                        let pIdx = n.pOff + i; let type_ = i32(prims[pIdx * 24]);
+                        var t = MAX_FLOAT;
+                        if (type_ == 0) { t = intersect_sphere(pIdx, r, tMax); }
+                        else { t = intersect_rect(pIdx, r, tMax); }
                         if (t < tMax) {
-                            int mIdx = (type == 0) ? toInt(getP(pIdx, 1).y) : toInt(getP(pIdx, 5).y);
-                            Material m = getMat(mIdx);
-                            if (m.trans > 0.0) { transmission *= (m.albedo * 0.7); if (dot(transmission, transmission) < 0.0001) return vec3(0.0); } 
-                            else return vec3(0.0);
+                             let mIdx = i32(prims[pIdx * 24 + 5 + select(16, 0, type_ == 0)]);
+                             let m = getMat(mIdx);
+                             if (m.trans > 0.0) { trans *= (m.albedo * 0.7); if(dot(trans,trans)<0.001) { return vec3f(0.0); } }
+                             else { return vec3f(0.0); }
                         }
                     }
-                    if (ptr == 0) break; nodeIdx = stack[--ptr];
+                    if (stackPtr == 0) { break; } stackPtr--; nodeIdx = stack[stackPtr];
                 } else {
-                    float dAxis = (node.axis == 0) ? r.d.x : ((node.axis == 1) ? r.d.y : r.d.z);
-                    int near = (dAxis < 0.0) ? node.secondChild : (nodeIdx + 1); int far = (dAxis < 0.0) ? (nodeIdx + 1) : node.secondChild;
-                    stack[ptr++] = far; nodeIdx = near;
+                    let dAxis = select(r.d.z, select(r.d.y, r.d.x, n.axis == 0), n.axis == 1);
+                    let near = select(nodeIdx + 1, n.secChild, dAxis < 0.0);
+                    let far = select(n.secChild, nodeIdx + 1, dAxis < 0.0);
+                    stack[stackPtr] = far; stackPtr++; nodeIdx = near;
                 }
-            } else { if (ptr == 0) break; nodeIdx = stack[--ptr]; }
+            } else { if (stackPtr == 0) { break; } stackPtr--; nodeIdx = stack[stackPtr]; }
         }
-        return transmission;
-    }
-    void getSurface(Ray r, Hit h, out Surface s) {
-        s.p = r.o + r.d * h.t;
-        if (h.type == 0) {
-            vec4 p0 = getP(h.idx, 0); vec4 p1 = getP(h.idx, 1);
-            vec3 center = p0.yzw; float invR = p1.z; s.n = (s.p - center) * invR; s.mat = toInt(p1.y);
-        } else { s.n = getP(h.idx, 3).xyz; s.mat = toInt(getP(h.idx, 5).y); }
-        s.front = dot(r.d, s.n) < 0.0; if (!s.front) s.n = -s.n;
-    }
-    float fresnel_schlick(float cosTheta, float ior) {
-        float r0 = (1.0 - ior) / (1.0 + ior); r0 = r0 * r0; return r0 + (1.0 - r0) * pow5(1.0 - cosTheta);
-    }
-    vec3 sample_ggx(vec3 N, float roughness) {
-        vec2 u = vec2(rand(), rand()); float a = roughness * roughness; float a2 = a * a; float phi = 2.0 * PI * u.x; 
-        float cosT = safe_sqrt((1.0 - u.y) / ((a2 - 1.0) * u.y + 1.0)); float sinT = safe_sqrt(1.0 - cosT * cosT);
-        vec3 H = vec3(cos(phi) * sinT, sin(phi) * sinT, cosT); vec3 t, b; create_basis(N, t, b); return normalize(t * H.x + b * H.y + N * H.z);
-    }
-    vec3 sample_cosine(vec3 N) {
-        vec2 u = vec2(rand(), rand()); float r = sqrt(u.x); float theta = 2.0 * PI * u.y;
-        vec3 p = vec3(r * cos(theta), r * sin(theta), safe_sqrt(1.0 - u.x)); vec3 t, b; create_basis(N, t, b); return normalize(t * p.x + b * p.y + N * p.z);
+        return trans;
     }
 
-    void main() {
-        // 1. INIT RNG & STATE
-        reset_prng_for_tile(int(gl_FragCoord.x), int(gl_FragCoord.y), int(uRes.x));
-        vec4 oldSum = texelFetch(uAccum, ivec2(gl_FragCoord.xy), 0);
-        vec4 oldComp = texelFetch(uComp, ivec2(gl_FragCoord.xy), 0);
-        if (uFrame == 0) { oldSum = vec4(0.0); oldComp = vec4(0.0); }
+    fn aces(x: vec3f) -> vec3f {
+        let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
+        return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
+    }
+    fn schlick(cost: f32, ior: f32) -> f32 {
+        let r0 = (1.0-ior)/(1.0+ior); let r02 = r0*r0;
+        return r02 + (1.0-r02)*pow(1.0-cost, 5.0);
+    }
+    fn ortho(n: vec3f) -> mat3x3f {
+        let up = select(vec3f(1,0,0), vec3f(0,0,1), abs(n.z) < 0.999);
+        let t = normalize(cross(up, n)); let b = cross(n, t);
+        return mat3x3f(t, b, n);
+    }
+    fn ggx(n: vec3f, r: f32) -> vec3f {
+        let u = vec2f(rand(), rand()); let a2 = r*r*r*r; let phi = 2.0*PI*u.x;
+        let cost = sqrt((1.0-u.y)/((a2-1.0)*u.y+1.0)); let sint = sqrt(1.0-cost*cost);
+        let h = vec3f(cos(phi)*sint, sin(phi)*sint, cost);
+        return normalize(ortho(n) * h);
+    }
+    fn cosine(n: vec3f) -> vec3f {
+        let u = vec2f(rand(), rand()); let r = sqrt(u.x); let theta = 2.0*PI*u.y;
+        let p = vec3f(r*cos(theta), r*sin(theta), sqrt(1.0-u.x));
+        return normalize(ortho(n) * p);
+    }
+
+    @compute @workgroup_size(64, 1, 1)
+    fn main(@builtin(global_invocation_id) id: vec3u) {
+        // FLATTENED: 1D Indexing removes driver-specific 2D tiling logic
+        let idx = id.x;
+        if (idx >= u32(u.res.x) * u32(u.res.y)) { return; }
         
-        vec3 acc = vec3(0.0);
-        int pixelIndex = int(gl_FragCoord.y) * int(uRes.x) + int(gl_FragCoord.x);
-
-        // 2. CRITICAL CANARY CHECK (Done BEFORE mixing frame to ensure pure verification)
-        if ((pixelIndex % 1009) == 0) {
-            uint h = pcg32_random(); 
-            acc = vec3(float(h & 0xFFu)/255.0, float((h>>8u)&0xFFu)/255.0, float((h>>16u)&0xFFu)/255.0);
-            oldComp = vec4(0.0);
-        } 
-        else {
-            // >>> FIX: MIX FRAME INTO RNG FOR PATH TRACING <<<
-            // This ensures every frame (sample) has a unique noise pattern, allowing accumulation to work.
-            // We use XOR to perturb the state cheaply but effectively.
-            pcg_state.state.x ^= uint(uFrame * 1973); 
-            pcg_state.state.y ^= uint(uFrame * 9277);
-
-            vec2 jitter = vec2(rand(), rand()) - 0.5;
-            vec2 uv = (gl_FragCoord.xy + jitter) / uRes;
-            vec3 target = uCamBL + uCamH * uv.x + uCamV * uv.y; 
-            vec3 dir = normalize(target - uCamPos);
-            vec3 focusPoint = uCamPos + dir * uFocalDist; 
-            float angle = 2.0 * PI * rand(); 
-            float radius = uLensRadius * sqrt(rand());
-            vec3 lensOffset = uCamRight * (radius * cos(angle)) + uCamUp * (radius * sin(angle));
-            vec3 origin = uCamPos + lensOffset; 
-            vec3 rayDir = normalize(focusPoint - origin);
-            Ray r; r.o = origin; r.d = rayDir; r.invD = safeInverse(r.d);
-            vec3 att = vec3(1.0); 
-            bool lastBounceSpecular = true;
-
-            for (int depth = 0; depth < uMaxBounces; depth++) {
-                Hit hit;
-                if (!traverse(r, hit, MAX_FLOAT)) {
-                    vec3 unit_d = normalize(r.d); float t = 0.5 * (unit_d.y + 1.0);
-                    vec3 sky = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t); acc += sky * att * 0.5; break;
+        let screen_x = idx % u32(u.res.x);
+        let screen_y = idx / u32(u.res.x);
+        
+        reset_prng(screen_x, screen_y, u32(u.res.x));
+        
+        //let idx = id.y * u32(u.res.x) + id.x;
+        var acc = vec3f(0.0);
+        
+        if (idx % 1009u == 0u) {
+            let h = pcg32_random();
+            acc = vec3f(f32(h & 0xFFu)/255.0, f32((h>>8u)&0xFFu)/255.0, f32((h>>16u)&0xFFu)/255.0);
+            accum[idx].comp = vec4f(0.0); 
+        } else {
+            pcg_state.state.x ^= (u.frame * 1973u);
+            pcg_state.state.y ^= (u.frame * 9277u);
+            
+            let jit = vec2f(rand(), rand()) - 0.5;
+            // FIX: Use calculated screen coordinates for 1D dispatch
+            let uv = (vec2f(f32(screen_x), f32(screen_y)) + jit) / u.res;
+            // FIX: Flip Y for correct camera
+            let focusTarget = u.camBL + u.camH * uv.x + u.camV * (1.0 - uv.y);
+            let dir = normalize(focusTarget - u.camPos);
+            let focus = u.camPos + dir * u.focalDist;
+            let ang = 2.0 * PI * rand(); let rad = u.lensRadius * sqrt(rand());
+            let off = u.camRight * (rad * cos(ang)) + u.camUp * (rad * sin(ang));
+            let origin = u.camPos + off;
+            
+            var r: Ray; r.o = origin; r.d = normalize(focus - origin);
+            r.invD = vec3f(1.0)/r.d;
+            
+            var att = vec3f(1.0); var spec = true;
+            for(var d=0u; d<u.maxBounces; d++) {
+                var hit: Hit;
+                if (!traverse(r, &hit)) {
+                    let t = 0.5 * (r.d.y + 1.0);
+                    acc += mix(vec3f(1.0), vec3f(0.5, 0.7, 1.0), t) * att * 0.5;
+                    break;
                 }
-                Surface surf; getSurface(r, hit, surf); Material mat = getMat(surf.mat);
-                if (dot(mat.emissive, mat.emissive) > 0.0) { if (depth == 0 || lastBounceSpecular) { acc += mat.emissive * att; } break; }
                 
-                bool isGlass = (mat.trans > rand()); bool isMetal = (rand() < mat.metal); 
-                vec3 nextDir; vec3 V = -r.d;
+                var surf: Surf; surf.p = r.o + r.d * hit.t;
+                if (hit.type_ == 0) {
+                     let p = getPrim(hit.idx); let c = p.f0.xyz; 
+                     // FIX: Correct index for inverse radius
+                     let ir = p.f1.y;
+                     surf.n = (surf.p - c) * ir; surf.mat = i32(p.f1.x);
+                } else {
+                     let p = getPrim(hit.idx); surf.n = p.f3.xyz; surf.mat = i32(p.f5.y);
+                }
+                surf.front = dot(r.d, surf.n) < 0.0; if (!surf.front) { surf.n = -surf.n; }
+                
+                let mat = getMat(surf.mat);
+                if (dot(mat.emissive, mat.emissive) > 0.0) {
+                    if (d==0u || spec) { acc += mat.emissive * att; }
+                    break;
+                }
+                
+                let isGlass = mat.trans > rand(); let isMetal = rand() < mat.metal;
+                var nextDir: vec3f; let V = -r.d;
+                
                 if (isGlass) {
-                    lastBounceSpecular = true;
-                    if (!surf.front) att *= exp(-(vec3(1.0) - mat.albedo) * hit.t * 0.5);
-                    float eta = surf.front ? (1.0 / mat.ior) : mat.ior;
-                    float cosI = clamp(dot(V, surf.n), -1.0, 1.0); 
-                    float sin2T = eta * eta * (1.0 - cosI * cosI); 
-                    float F = fresnel_schlick(abs(cosI), mat.ior);
-                    if (sin2T > 1.0 || F > rand()) { nextDir = reflect(r.d, surf.n); r.o = surf.p + surf.n * 0.01; } 
-                    else {
-                        float cosT = safe_sqrt(1.0 - sin2T);
+                    spec = true;
+                    if (!surf.front) { att *= exp(-(vec3f(1.0)-mat.albedo) * hit.t * 0.5); }
+                    let eta = select(mat.ior, 1.0/mat.ior, surf.front);
+                    let cosI = clamp(dot(V, surf.n), -1.0, 1.0);
+                    let s2 = eta*eta*(1.0-cosI*cosI);
+                    if (s2 > 1.0 || schlick(abs(cosI), mat.ior) > rand()) {
+                        nextDir = reflect(r.d, surf.n); r.o = surf.p + surf.n * 0.01;
+                    } else {
+                        let cosT = sqrt(1.0 - s2);
                         nextDir = normalize(r.d * eta + surf.n * (eta * cosI - cosT));
                         r.o = surf.p - surf.n * 0.01;
                     }
-                    if (surf.front) att *= mat.albedo;
-                    r.d = nextDir; r.invD = safeInverse(r.d);
+                    if (surf.front) { att *= mat.albedo; }
                 } else {
-                     if (uNumLights > 0) {
-                        int lIdx = int(floor(rand() * float(uNumLights))); lIdx = min(lIdx, uNumLights - 1); int lPrim = getLightIdx(lIdx);
-                        vec4 lp0 = getP(lPrim, 0); vec4 lp1 = getP(lPrim, 1); vec4 lp2 = getP(lPrim, 2); vec4 lp3 = getP(lPrim, 3); vec4 lp5 = getP(lPrim, 5);
-                        vec3 lightNormal = lp3.xyz; float lightArea = lp1.x; vec3 lightPoint = lp0.yzw + lp1.yzw * rand() + lp2.yzw * rand();
-                        vec3 toLight = lightPoint - surf.p; float dist = length(toLight); vec3 L = toLight / dist;
-                        float NdotL = dot(surf.n, L); float lightCos = max(dot(lightNormal, -L), 0.0);
-                        if (NdotL > 0.0 && lightCos > 1e-6) {
-                            Ray shadowRay; shadowRay.o = surf.p + surf.n * EPSILON; shadowRay.d = L; shadowRay.invD = safeInverse(L);
-                            vec3 vis = getVisibility(shadowRay, dist - 2.0 * EPSILON);
-                            if (dot(vis, vis) > 0.0) {
-                                float pdf = dist * dist / (lightArea * lightCos * float(uNumLights));
-                                if (pdf > 0.0) acc += att * getMat(toInt(lp5.y)).emissive * (mat.albedo / PI) * NdotL * vis / pdf;
-                            }
+                    if (u.numLights > 0u) {
+                        let lIdx = min(u32(floor(rand() * f32(u.numLights))), u.numLights - 1u);
+                        let lPrim = getLightIdx(i32(lIdx));
+                        let p = getPrim(lPrim);
+                        let lp = p.f0.xyz + p.f1.xyz*rand() + p.f2.xyz*rand();
+                        let toL = lp - surf.p; let dist = length(toL); let L = toL/dist;
+                        let ln = p.f3.xyz; let area = p.f0.w;
+                        let lCos = max(dot(ln, -L), 0.0);
+                        if (dot(surf.n, L) > 0.0 && lCos > 0.0001) {
+                             var shadow: Ray; shadow.o = surf.p + surf.n*EPS; shadow.d = L; shadow.invD = vec3f(1.0)/L;
+                             let vis = getVisibility(shadow, dist - 2.0*EPS);
+                             if (dot(vis, vis) > 0.0) {
+                                 let pdf = dist*dist / (area * lCos * f32(u.numLights));
+                                 let lm = getMat(i32(p.f5.y));
+                                 acc += att * lm.emissive * (mat.albedo/PI) * dot(surf.n, L) * vis / pdf;
+                             }
                         }
                     }
                     if (isMetal) {
-                        lastBounceSpecular = true; vec3 H = sample_ggx(surf.n, mat.rough); nextDir = reflect(-V, H);
-                        if (dot(nextDir, surf.n) <= 0.0) nextDir = sample_cosine(surf.n); att *= mat.albedo;
+                        spec = true; let h = ggx(surf.n, mat.rough); nextDir = reflect(-V, h);
+                        if (dot(nextDir, surf.n) <= 0.0) { nextDir = cosine(surf.n); }
+                        att *= mat.albedo;
                     } else {
-                        float F = fresnel_schlick(clamp(dot(V, surf.n), 0.0, 1.0), 1.5) * (1.0 - mat.rough); 
-                        if (rand() < F) { lastBounceSpecular = true; nextDir = reflect(r.d, surf.n); } 
-                        else { lastBounceSpecular = false; nextDir = sample_cosine(surf.n); att *= mat.albedo; }
+                        let f = schlick(max(dot(V, surf.n), 0.0), 1.5) * (1.0 - mat.rough);
+                        if (rand() < f) { spec = true; nextDir = reflect(r.d, surf.n); }
+                        else { spec = false; nextDir = cosine(surf.n); att *= mat.albedo; }
                     }
-                    r.o = surf.p + surf.n * 0.01; 
-                    r.d = normalize(nextDir); r.invD = safeInverse(r.d);
+                    r.o = surf.p + surf.n * 0.01;
                 }
-                
-                // STANDARD RUSSIAN ROULETTE (Efficient, uses standard rand)
-                if (depth > 3) { 
-                    float p = max(att.r, max(att.g, att.b)); 
-                    if (rand() > p) break; 
-                    att /= p; 
+                r.d = normalize(nextDir); r.invD = vec3f(1.0)/r.d;
+                if (d > 3u) {
+                    // FAIRNESS FIX: Constant probability (0.8) regardless of color/brightness.
+                    // This forces the GPU to calculate the same depth even for dark/absorbed rays.
+                    let p = 0.8;
+                    if (rand() > p) { break; } att *= (1.0/p);
                 }
             }
-            acc = min(acc, vec3(5.0));
-            if (dot(acc, acc) < 0.0 || isnan(dot(acc, acc))) acc = vec3(0.0);
+            acc = min(acc, vec3f(5.0));
+            // FIX: Manual NaN check
+            if (any(acc != acc) || any(acc < vec3f(0.0))) { acc = vec3f(0.0); }
+        }
+        
+        let oldSum = accum[idx].sum.rgb;
+        let oldComp = accum[idx].comp.rgb;
+        
+        var y = acc - oldComp;
+        var t = oldSum + y;
+        var c = (t - oldSum) - y;
+        
+        if (u.frame == 0u && idx % 1009u != 0u) { t = acc; c = vec3f(0.0); }
+        
+        accum[idx].sum = vec4f(t, 1.0);
+        accum[idx].comp = vec4f(c, 1.0);
+        
+        // VISUAL FIX: Hide canary pixels in the display buffer by copying the neighbor
+        var visualSum = t;
+        if (idx % 1009u == 0u) {
+            let neighborIdx = min(idx + 1u, u32(u.res.x) * u32(u.res.y) - 1u);
+            visualSum = accum[neighborIdx].sum.rgb;
         }
 
-        // 4. KAHAN ACCUMULATION
-        vec3 y = acc - oldComp.rgb;
-        vec3 t = oldSum.rgb + y;
-        vec3 c = (t - oldSum.rgb) - y;
-        outColor = vec4(t, 1.0);
-        outComp = vec4(c, 1.0);
-    }`;
-    const displayVs = `#version 300 es
-    in vec2 pos; out vec2 uv; void main() { 
-        // Flip Y (1.0 - y) to match CPU renderer orientation
-        uv = vec2(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5)); 
-        gl_Position = vec4(pos, 0, 1); 
-    }`;
-    
-    const displayFs = `#version 300 es
-    precision highp float; in vec2 uv; uniform sampler2D tex; uniform float uSamples; uniform vec2 uRes; out vec4 color;
-    vec3 aces(vec3 x) { const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14; return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0); }
-    void main() { 
-        ivec2 coord = ivec2(floor(uv * uRes));
-        int idx = coord.y * int(uRes.x) + coord.x;
-        if ((idx % 1009) == 0) coord.x = min(coord.x + 1, int(uRes.x) - 1);
-        vec4 data = texelFetch(tex, coord, 0);
-        vec3 c = data.rgb / max(1.0, uSamples); 
-        c = aces(c); c = pow(c, vec3(1.0 / 2.2)); 
-        color = vec4(c, 1.0); 
-    }`;
+        let div = f32(u.frame + 1u);
+        var col = visualSum / div;
+        col = aces(col);
+        col = pow(col, vec3f(1.0/2.2));
+        outputBuf[idx] = vec4f(col, 1.0);
+    }
+    `;
 
-    function createProg(vs, fs) {
-        let p = gl.createProgram();
-        let v = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(v, vs); gl.compileShader(v);
-        let f = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(f, fs); gl.compileShader(f);
-        if (!gl.getShaderParameter(v, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(v));
-        if (!gl.getShaderParameter(f, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(f));
-        gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
-        return p;
-    }
-    function createDataTex(data, width, height) {
-        let t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, data);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        return t;
-    }
-    function initGL() {
-        gl = canvas.getContext("webgl2", { powerPreference: "high-performance", alpha: false, preserveDrawingBuffer: true });
-        gl.getExtension("EXT_color_buffer_float"); gl.getExtension("OES_texture_float_linear");
-        ptProg = createProg(vsSource, fsSource); 
-        dispProg = createProg(displayVs, displayFs);
-        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
-        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    // --- 3. WEBGPU INIT ---
+    async function initWebGPU() {
+        if (!navigator.gpu) throw new Error("WebGPU not supported");
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+        device = await adapter.requestDevice();
+        
+        const createBuf = (arr, usage) => {
+            const b = device.createBuffer({ size: arr.byteLength, usage: usage | GPUBufferUsage.COPY_DST });
+            device.queue.writeBuffer(b, 0, arr);
+            return b;
+        };
+
         const nodeData = new Float32Array(bvhNodes.length * 12);
         bvhNodes.forEach((n, i) => {
             let b = i * 12;
-            nodeData[b+0] = n.min[0]; nodeData[b+1] = n.min[1]; nodeData[b+2] = n.min[2]; nodeData[b+3] = n.primOffset || 0;
-            nodeData[b+4] = n.max[0]; nodeData[b+5] = n.max[1]; nodeData[b+6] = n.max[2]; nodeData[b+7] = n.nPrims || 0;
-            nodeData[b+8] = n.axis || 0; nodeData[b+9] = n.secondChild || 0;
+            nodeData[b+0] = n.min[0]; nodeData[b+1] = n.min[1]; nodeData[b+2] = n.min[2]; nodeData[b+3] = n.primOffset||0;
+            nodeData[b+4] = n.max[0]; nodeData[b+5] = n.max[1]; nodeData[b+6] = n.max[2]; nodeData[b+7] = n.nPrims||0;
+            nodeData[b+8] = n.axis||0; nodeData[b+9] = n.secondChild||0;
         });
-        texNodes = createDataTex(nodeData, 3, bvhNodes.length);
+        bufNodes = createBuf(nodeData, GPUBufferUsage.STORAGE);
+
         const primData = new Float32Array(orderedPrims.length * 24);
         orderedPrims.forEach((p, i) => {
             let b = i * 24;
@@ -1281,12 +1362,13 @@ input:checked + .slider:before { transform: translateX(30px); }
                 primData[b+1] = p.p0[0]; primData[b+2] = p.p0[1]; primData[b+3] = p.p0[2]; primData[b+4] = p.area; 
                 primData[b+5] = p.v0[0]; primData[b+6] = p.v0[1]; primData[b+7] = p.v0[2];
                 primData[b+9] = p.v1[0]; primData[b+10] = p.v1[1]; primData[b+11] = p.v1[2];
-                primData[b+12] = p.n[0]; primData[b+13] = p.n[1]; primData[b+14] = p.n[2];
-                primData[b+16] = p.d00; primData[b+17] = p.d11; primData[b+18] = p.d01; primData[b+19] = p.invDet;
-                primData[b+20] = p.d; primData[b+21] = p.mat;
+                primData[b+13] = p.n[0]; primData[b+14] = p.n[1]; primData[b+15] = p.n[2];
+                primData[b+17] = p.d00; primData[b+18] = p.d11; primData[b+19] = p.d01; primData[b+20] = p.invDet;
+                primData[b+21] = p.d; primData[b+22] = p.mat;
             }
         });
-        texPrims = createDataTex(primData, 6, orderedPrims.length);
+        bufPrims = createBuf(primData, GPUBufferUsage.STORAGE);
+
         const matData = new Float32Array(materials.length * 12);
         materials.forEach((m, i) => {
             let b = i * 12;
@@ -1294,212 +1376,205 @@ input:checked + .slider:before { transform: translateX(30px); }
             matData[b+4] = m.emissive[0]; matData[b+5] = m.emissive[1]; matData[b+6] = m.emissive[2];
             matData[b+8] = m.metal; matData[b+9] = m.rough; matData[b+10] = m.ior; matData[b+11] = m.trans;
         });
-        texMats = createDataTex(matData, 3, materials.length);
-        const lightData = new Float32Array(Math.max(lightIndices.length, 1) * 4);
-        lightIndices.forEach((idx, i) => { lightData[i * 4] = idx; });
-        texLights = createDataTex(lightData, 1, Math.max(lightIndices.length, 1));
-        canvas.width = width; canvas.height = height; gl.viewport(0, 0, width, height);
-        const makeRenderTarget = () => {
-            let t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            return t;
-        };
-        texA = makeRenderTarget(); texCompA = makeRenderTarget();
-        texB = makeRenderTarget(); texCompB = makeRenderTarget();
-        fbA = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); 
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texA, 0);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texCompA, 0);
-        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-        fbB = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); 
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texB, 0);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texCompB, 0);
-        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-    }
-    function setupStaticUniforms() {
-        gl.useProgram(ptProg);
-        
-        // --- 1. Math Helpers (Scoped here to avoid dependency issues) ---
-        const V3 = {
-            sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
-            add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
-            mul: (a, s) => [a[0]*s, a[1]*s, a[2]*s],
-            cross: (a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]],
-            norm: (a) => { let l = Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]); return l===0?[0,0,0]:[a[0]/l,a[1]/l,a[2]/l]; }
-        };
+        bufMats = createBuf(matData, GPUBufferUsage.STORAGE);
 
-        // --- 2. Camera Setup (Matches CPU/Cornell Box) ---
+        const lightData = new Float32Array(Math.max(lightIndices.length, 1)); 
+        if (lightIndices.length > 0) lightIndices.forEach((idx, i) => lightData[i] = idx);
+        bufLights = createBuf(lightData, GPUBufferUsage.STORAGE);
+
+        // FIX: Buffer size 144
+        bufUniforms = device.createBuffer({ size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+        const pixelCount = width * height;
+        bufAccum = device.createBuffer({ size: pixelCount * 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+        bufResult = device.createBuffer({ size: pixelCount * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+        bufReadback = device.createBuffer({ size: pixelCount * 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+
+        const module = device.createShaderModule({ code: wgslSource });
+        const layout = device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                // FIX: Explicit read-write access
+                { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+            ]
+        });
+        pipeline = device.createComputePipeline({ layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }), compute: { module, entryPoint: "main" } });
+        
+        bindGroup = device.createBindGroup({
+            layout: layout,
+            entries: [
+                { binding: 0, resource: { buffer: bufUniforms } },
+                { binding: 1, resource: { buffer: bufNodes } },
+                { binding: 2, resource: { buffer: bufPrims } },
+                { binding: 3, resource: { buffer: bufMats } },
+                { binding: 4, resource: { buffer: bufLights } },
+                { binding: 5, resource: { buffer: bufAccum } },
+                { binding: 6, resource: { buffer: bufResult } }
+            ]
+        });
+        
+        const encoder = device.createCommandEncoder();
+        encoder.clearBuffer(bufAccum);
+        device.queue.submit([encoder.finish()]);
+    }
+
+    function updateUniforms() {
+        const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+        const add = (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
+        const mul = (a, s) => [a[0]*s, a[1]*s, a[2]*s];
+        const cross = (a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]];
+        const norm = (a) => { let l = Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]); return l===0?[0,0,0]:[a[0]/l,a[1]/l,a[2]/l]; };
+
         let camPos = [0, -5, -25]; 
         let lookAt = [0, -15, 4];
-        let fwd = V3.norm(V3.sub(lookAt, camPos)); 
+        let fwd = norm(sub(lookAt, camPos)); 
         let worldUp = [0, 1, 0];
-        let right = V3.norm(V3.cross(worldUp, fwd)); // [1, 0, 0] roughly
-        let up = V3.cross(fwd, right);
-        
-        let focalDist = 22.0; 
-        let lensRadius = 0.025;
-        let fov = 75 * Math.PI / 180;
-        
-        // Viewport calculation
-        let h = Math.tan(fov / 2); 
-        let ar = width / height;
-        let viewportH = 2.0 * h; 
-        let viewportW = ar * viewportH;
-        
-        let horizontal = V3.mul(right, viewportW * focalDist); 
-        let vertical = V3.mul(up, viewportH * focalDist);
-        
-        // Lower Left Corner = Origin + Fwd*Focal - H/2 - V/2
-        let center = V3.add(camPos, V3.mul(fwd, focalDist));
-        let halfH = V3.mul(horizontal, 0.5);
-        let halfV = V3.mul(vertical, 0.5);
-        let llc = V3.sub(V3.sub(center, halfH), halfV);
+        let right = norm(cross(worldUp, fwd)); 
+        let up = cross(fwd, right);
+        let focalDist = 22.0; let lensRadius = 0.025; let fov = 75 * Math.PI / 180;
+        let h = Math.tan(fov / 2); let ar = width / height;
+        let vH = 2.0 * h; let vW = ar * vH;
+        let horizontal = mul(right, vW * focalDist); 
+        let vertical = mul(up, vH * focalDist);
+        let center = add(camPos, mul(fwd, focalDist));
+        let llc = sub(sub(center, mul(horizontal, 0.5)), mul(vertical, 0.5));
 
-        // --- 3. Upload Uniforms ---
-        gl.uniform2f(gl.getUniformLocation(ptProg, "uRes"), width, height);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uMaxBounces"), maxBounces);
-        gl.uniform2uiv(gl.getUniformLocation(ptProg, "uGlobalSeed"), [userSeedLo, userSeedHi]);
+        // FIX: Buffer Size 144
+        const data = new ArrayBuffer(144); const f32 = new Float32Array(data); const u32 = new Uint32Array(data);
+        f32[0] = width; f32[1] = height; 
+        u32[2] = frameCount; u32[3] = maxBounces;
+        u32[4] = userSeedLo; u32[5] = userSeedHi;
+        f32[8] = camPos[0]; f32[9] = camPos[1]; f32[10] = camPos[2];
+        f32[12] = llc[0]; f32[13] = llc[1]; f32[14] = llc[2];
+        f32[16] = horizontal[0]; f32[17] = horizontal[1]; f32[18] = horizontal[2];
+        f32[20] = vertical[0]; f32[21] = vertical[1]; f32[22] = vertical[2];
+        f32[24] = right[0]; f32[25] = right[1]; f32[26] = right[2];
+        f32[28] = up[0]; f32[29] = up[1]; f32[30] = up[2];
+        // FIX: Indices 31, 32, 33
+        f32[31] = focalDist; f32[32] = lensRadius; u32[33] = lightIndices.length;
         
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamPos"), camPos);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamBL"), llc);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamH"), horizontal);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamV"), vertical);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamRight"), right);
-        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamUp"), up);
-        gl.uniform1f(gl.getUniformLocation(ptProg, "uFocalDist"), focalDist);
-        gl.uniform1f(gl.getUniformLocation(ptProg, "uLensRadius"), lensRadius);
-        gl.uniform1i(gl.getUniformLocation(ptProg, "uNumLights"), lightIndices.length);
-
-        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texNodes); gl.uniform1i(gl.getUniformLocation(ptProg, "uNodes"), 0);
-        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texPrims); gl.uniform1i(gl.getUniformLocation(ptProg, "uPrims"), 1);
-        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, texMats); gl.uniform1i(gl.getUniformLocation(ptProg, "uMats"), 2);
-        gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, texLights); gl.uniform1i(gl.getUniformLocation(ptProg, "uLights"), 3);
+        device.queue.writeBuffer(bufUniforms, 0, data);
     }
-
-    function loop() {
+// Track the last time we sent a progress update
+    let lastProgressUpdate = 0;
+    channel.port1.onmessage = async function() {
         if (!isRunning) return;
 
-        // Fencing / Anti-Freeze Logic
-        if (pendingSync) {
-            let status = gl.clientWaitSync(pendingSync, 0, 0);
-            if (status === gl.TIMEOUT_EXPIRED) {
-                // GPU Busy, yield
-                // if (batchSize > 1) batchSize--;
-                setTimeout(loop, 0); 
-                return;
-            } else {
-                // GPU Done, ramp up
-                //if (batchSize < 2000) batchSize++; 
-                gl.deleteSync(pendingSync);
-                pendingSync = null;
-            }
-        }
-
-        gl.useProgram(ptProg);
-        gl.viewport(0, 0, width, height);
-        
-        // Dynamic Batch Loop
-        for(let i=0; i<batchSize; i++) {
-            if (frameCount >= targetSamples) break;
-            
-            let readSum = frameCount % 2 === 0 ? texB : texA;
-            let readComp = frameCount % 2 === 0 ? texCompB : texCompA;
-            let writeFb = frameCount % 2 === 0 ? fbA : fbB;
-
-            gl.uniform1i(gl.getUniformLocation(ptProg, "uFrame"), frameCount);
-            gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, readSum); gl.uniform1i(gl.getUniformLocation(ptProg, "uAccum"), 4);
-            gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, readComp); gl.uniform1i(gl.getUniformLocation(ptProg, "uComp"), 5);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, writeFb);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-            frameCount++;
-        }
-
-        // Set Fence
-        pendingSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-        gl.flush(); 
-
+        // 1. FINISHED CHECK
         if (frameCount >= targetSamples) {
+            // Wait for final frame to finish
+            await device.queue.onSubmittedWorkDone();
             isRunning = false;
-            // 1. Display
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            gl.useProgram(dispProg);
-            gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB);
-            gl.uniform1i(gl.getUniformLocation(dispProg, "tex"), 0);
-            gl.uniform1f(gl.getUniformLocation(dispProg, "uSamples"), frameCount);
-            gl.uniform2f(gl.getUniformLocation(dispProg, "uRes"), width, height);
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-            // 2. Read Display Pixels (Visual)
-            let displayPixels = new Uint8Array(width * height * 4);
-            gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, displayPixels);
+            // --- READBACK LOGIC ---
+            const bufHashRaw = device.createBuffer({ size: width*height*16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+            const bufHashTemp = device.createBuffer({ size: width*height*16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+            const extractSource = `@group(0) @binding(0) var<storage, read> acc:array<PixelData>; @group(0) @binding(1) var<storage, read_write> out:array<vec4f>; struct PixelData { sum:vec4f, comp:vec4f } @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id:vec3u) { if(id.x < ${width*height}u) { out[id.x] = acc[id.x].sum; } }`;
+            const exMod = device.createShaderModule({ code: extractSource });
+            const exPipe = device.createComputePipeline({ layout: 'auto', compute: { module: exMod, entryPoint: 'main' } });
+            const exBG = device.createBindGroup({ layout: exPipe.getBindGroupLayout(0), entries: [{binding:0, resource:{buffer:bufAccum}}, {binding:1, resource:{buffer:bufHashTemp}}] });
+            const exEnc = device.createCommandEncoder();
+            const p = exEnc.beginComputePass(); p.setPipeline(exPipe); p.setBindGroup(0, exBG); p.dispatchWorkgroups(Math.ceil((width * height) / 64), 1, 1); p.end();
+            exEnc.copyBufferToBuffer(bufResult, 0, bufReadback, 0, width * height * 16);
+            exEnc.copyBufferToBuffer(bufHashTemp, 0, bufHashRaw, 0, width * height * 16);
+            device.queue.submit([exEnc.finish()]);
 
-            // 3. Read Raw Data (Hash)
-            let rawFb = gl.createFramebuffer(); 
-            gl.bindFramebuffer(gl.FRAMEBUFFER, rawFb);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB, 0);
-            let rawPixels = new Float32Array(width * height * 4);
-            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, rawPixels);
-
-            self.postMessage({ 
-                status: "finished", 
-                imgData: displayPixels.buffer, 
-                hashData: rawPixels.buffer 
-            }, [displayPixels.buffer, rawPixels.buffer]);
+            await bufReadback.mapAsync(GPUMapMode.READ); await bufHashRaw.mapAsync(GPUMapMode.READ);
+            const disp = new Uint8Array(width*height*4); const vf = new Float32Array(bufReadback.getMappedRange());
+            for(let i=0; i<vf.length; i++) disp[i] = Math.max(0, Math.min(255, vf[i]*255.0));
+            const hf = new Float32Array(bufHashRaw.getMappedRange()).slice();
+            bufReadback.unmap(); bufHashRaw.unmap();
+            
+            self.postMessage({ status: "finished", imgData: disp.buffer, hashData: hf.buffer }, [disp.buffer, hf.buffer]);
             return;
         }
-        setTimeout(loop, 0);
-    }
+
+        // 2. PACED RENDER LOOP (No Batching, just Pipelining)
+        
+        // Update Static Uniforms (Camera etc) - Optimization: Only needed once, but safe here
+        updateUniforms(); 
+        // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
+        // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
+        // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
+        device.queue.writeBuffer(bufUniforms, 8, new Uint32Array([frameCount]));
+
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        // LINEAR DISPATCH: 64 threads per group, flat array
+        pass.dispatchWorkgroups(Math.ceil((width * height) / 64), 1, 1);
+        pass.end();
+        device.queue.submit([encoder.finish()]);
+
+        frameCount++;
+
+        // REAL TIME PREVIEW (Every 5 frames, if enabled)
+        if (realtime && frameCount % 5 === 0) {
+            // Copy current result to readback buffer
+            const cmd = device.createCommandEncoder();
+            cmd.copyBufferToBuffer(bufResult, 0, bufReadback, 0, width * height * 16);
+            device.queue.submit([cmd.finish()]);
+
+            // Map and read
+            await bufReadback.mapAsync(GPUMapMode.READ);
+            const raw = new Float32Array(bufReadback.getMappedRange());
+            const preview = new Uint8ClampedArray(width * height * 4);
+            
+            // Simple conversion (Float to Byte)
+            for (let i = 0; i < raw.length; i++) {
+                preview[i] = Math.max(0, Math.min(255, raw[i] * 255.0));
+            }
+            
+            bufReadback.unmap();
+            
+            // Send to main thread
+            self.postMessage({ status: "preview", imgData: preview.buffer }, [preview.buffer]);
+        }
+
+        // 3. SYNCHRONIZATION (The "Anti-Freeze" Valve) & PROGRESS
+
+        // 3. SYNCHRONIZATION (The "Anti-Freeze" Valve)
+        // Every 50 frames, we briefly await the GPU. 
+        // This keeps the Command Queue deep enough for max FPS, but shallow enough to prevent Browser Stalling.
+        // It works universally on Firefox and Chrome without capping HZ.
+        // 3. SYNCHRONIZATION (The "Anti-Freeze" Valve) & PROGRESS
+        // Check if we have advanced at least 50 frames since last sync/update
+        if (frameCount - lastProgressUpdate >= 60) {
+            await device.queue.onSubmittedWorkDone();
+            self.postMessage({ status: "progress", progress: frameCount, total: targetSamples });
+            lastProgressUpdate = frameCount;
+        }
+
+        // Trigger next frame immediately (0ms delay)
+        port.postMessage(null);
+    };
 
     self.onmessage = function(e) {
         if (e.data.init) { 
-            canvas = e.data.canvas; 
-            width = e.data.width || e.data.w; 
-            height = e.data.height || e.data.h;
-            
-            // >>> INSERT THIS BLOCK <<<
-            canvas.addEventListener('webglcontextlost', function(event) {
-                event.preventDefault();
-                self.postMessage({ status: 'crash' });
-            });
-            // >>> END INSERT <<<
+            width = e.data.w; 
+            height = e.data.h;
         }
-        // ... rest of the code ...
         if (e.data.start) {
             targetSamples = e.data.samples; 
-            
-            // FIX: Clamp Max Bounces to 12.
-            // The server sends 512, which causes TDR (Timeout) crashes on Mobile GPUs.
-            // 12 is sufficient for Global Illumination convergence in this scene.
-            // Use the value from the Settings API directly (Server now controls this)
             maxBounces = e.data.bounces;
-            
             userSeedLo = e.data.seed[0]; userSeedHi = e.data.seed[1];
+            realtime = e.data.realtime; // Store the flag
             
-            // Re-init if context was lost or scene changed
-            if (!gl || gl.isContextLost()) {
-                buildScene(); 
-                initGL(); 
-                setupStaticUniforms();
-            } else {
-                // Just update uniforms if GL is alive
-                gl.useProgram(ptProg);
-                gl.uniform1i(gl.getUniformLocation(ptProg, "uMaxBounces"), maxBounces);
-                gl.uniform2uiv(gl.getUniformLocation(ptProg, "uGlobalSeed"), [userSeedLo, userSeedHi]);
-                // Ensure other uniforms are valid (cam, etc) just in case
-                setupStaticUniforms(); 
-            }
-            
-            frameCount = 0; isRunning = true;
-            
-            // Reset Accumulators
-            gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); gl.clear(gl.COLOR_BUFFER_BIT);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); gl.clear(gl.COLOR_BUFFER_BIT);
-            
-            // Reset Batch Size for safety on new run
-            batchSize = 2;
-            
-            loop(); 
+            buildScene();
+            initWebGPU().then(() => {
+                frameCount = 0; isRunning = true;
+                // Start the fast loop
+                port.postMessage(null);
+            }).catch(err => {
+                console.error(err);
+                self.postMessage({ status: 'crash' });
+            });
         }
     };
 </script>
@@ -1521,19 +1596,59 @@ const lblPending = document.getElementById('lblPending');
             const labelGPU = document.getElementById('labelGPU');
             const threadGroup = document.getElementById('threadInput').parentElement;
 
-            rendererToggle.addEventListener('change', (e) => {
+            // Real Time Toggle Logic
+            const realtimeToggle = document.getElementById('realtimeToggle');
+            const realtimeLabel = document.getElementById('realtimeLabel');
+            // Initialize disabled state for CPU default
+            realtimeToggle.disabled = true;
+
+            realtimeToggle.addEventListener('change', (e) => {
                 if (e.target.checked) {
+                    // Enabled -> Green
+                    realtimeLabel.classList.remove('inactive-red');
+                    realtimeLabel.classList.add('active');
+                } else {
+                    // Disabled -> Red
+                    realtimeLabel.classList.remove('active');
+                    realtimeLabel.classList.add('inactive-red');
+                }
+            });
+
+            rendererToggle.addEventListener('change', (e) => {
+                const rtContainer = document.getElementById('realtimeContainer');
+                const rtInput = document.getElementById('realtimeToggle');
+
+                if (e.target.checked) {
+                    // GPU Selected
                     rendererType = 'gpu';
                     labelCPU.classList.remove('active');
                     labelGPU.classList.add('active');
                     threadGroup.style.opacity = '0.3'; 
                     document.getElementById('threadInput').disabled = true;
+                    
+                    // Enable Real Time Toggle
+                    rtContainer.style.opacity = '1';
+                    rtContainer.style.pointerEvents = 'auto';
+                    rtInput.disabled = false;
                 } else {
+                    // CPU Selected
                     rendererType = 'cpu';
                     labelGPU.classList.remove('active');
                     labelCPU.classList.add('active');
                     threadGroup.style.opacity = '1';
                     document.getElementById('threadInput').disabled = false;
+
+                    // Disable Real Time Toggle (Grey out)
+                    rtContainer.style.opacity = '0.5';
+                    rtContainer.style.pointerEvents = 'none';
+                    rtInput.disabled = true;
+                    
+                    // Optional: Uncheck it to avoid confusion
+                    if(rtInput.checked) {
+                         rtInput.checked = false;
+                         // Trigger change event manually to update the label color to red
+                         rtInput.dispatchEvent(new Event('change'));
+                    }
                 }
                 // Refresh settings to update samples display
                 fetchSceneSettings();
@@ -1843,7 +1958,6 @@ window.addEventListener('resize', scaleResultText);
                     return;
                 }
 
-               
                 let startToken = turnstile.getResponse();
                 if (!startToken) {
                     statusDiv.textContent = "Please solve the CAPTCHA to start.";
@@ -1856,24 +1970,26 @@ window.addEventListener('resize', scaleResultText);
                 document.getElementById('usernameInput').disabled = true;
                 document.getElementById('sceneSelector').disabled = true;
                 
+                // Show progress bar
+                progressBar.style.display = 'block';
+                progressFill.style.width = '0%';
+                progressText.textContent = "0%";
+                
                 statusDiv.textContent = "Rendering...";
                 statusDiv.style.color = "#fff";
 
                 try {
                     const scene = sceneSelector.value;
                     const res = await fetch(`${backendUrl}/api/start?scene=${scene}&type=${rendererType}`, {
-					    method: 'POST',
+                        method: 'POST',
                         headers: { 'X-Turnstile-Token': startToken },
-						cache: 'no-store'
+                        cache: 'no-store'
                     });
                     
                     const data = await res.json();
                     
-                     
                     if (res.status === 429) {
                         turnstile.reset();
-                        
-                       
                         const btn = document.getElementById('startMultiButton');
                         const oldText = btn.textContent;
                         btn.textContent = "Cooldown...";
@@ -1882,11 +1998,8 @@ window.addEventListener('resize', scaleResultText);
                             btn.textContent = oldText; 
                             if (!isBenchmarkRunning) btn.disabled = false;
                         }, 3000);
-
-                        
                         throw new Error("🛑 " + data.message); 
                     }
-                    
 
                     if (!res.ok) {
                         if (data.error === "CAPTCHA_FAILED" || data.error === "CAPTCHA_MISSING") {
@@ -1899,11 +2012,9 @@ window.addEventListener('resize', scaleResultText);
                         throw new Error(data.error || "Server connection failed");
                     }
 
-                   
                     turnstile.reset();
 
                     const currentToken = data.token;
-                    
                     const [seedLo, seedHi] = hashStringTo64Bit(data.seed);
                     
                     await prepareWasm(scene);
@@ -1921,22 +2032,22 @@ window.addEventListener('resize', scaleResultText);
 
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
                     scaleResultText(); 
-                    progressText.textContent = 'Render Done. Uploading...';
+                    
+                    // Force bar to 100% immediately when render finishes
+                    progressFill.style.width = '100%';
+                    progressText.textContent = '100% - Uploading...';
                     
                     statusDiv.textContent = "Validating & Uploading...";
                     statusDiv.style.color = "#ff9800"; 
 
-                    // Hash Logic
-                    // For GPU, we need to extract Canaries + Blocks for 'debugData'
-                    let debugData = null;
+                    // --- TIMER START: Data Processing ---
+                    const tProcStart = performance.now();
+
                     let hash = "";
+                    // FIX: Define submitBody in outer scope so fetch can see it
+                    let submitBody = null; 
                     
-                    // --- REPLACEMENT START: GPU Data Compression ---
                     if (rendererType === 'gpu') {
-                        // COMPRESSION: Instead of sending the full buffer (25MB+), 
-                        // we create a "fingerprint" consisting of Block Sums and Canaries.
-                        // This fits easily into D1 (SQLITE_TOOBIG fix).
-                        
                         const raw = new Float32Array(result.buffer);
                         const BLOCK_SIZE = 16;
                         const w = renderWidth;
@@ -1949,7 +2060,6 @@ window.addEventListener('resize', scaleResultText);
                             for (let bx = 0; bx < w; bx += BLOCK_SIZE) {
                                 let sumR = 0, sumG = 0, sumB = 0;
                                 let count = 0;
-                                
                                 for (let y = 0; y < BLOCK_SIZE; y++) {
                                     for (let x = 0; x < BLOCK_SIZE; x++) {
                                         let cx = bx + x; 
@@ -1958,65 +2068,81 @@ window.addEventListener('resize', scaleResultText);
 
                                         let idx = cy * w + cx;
                                         
-                                        // Canary Extraction
                                         if ((idx % 1009) === 0) {
-                                            // Save format: [index, r, g, b]
-                                            canaries.push([
-                                                idx, 
-                                                raw[idx*4], 
-                                                raw[idx*4+1], 
-                                                raw[idx*4+2]
-                                            ]);
-                                            continue; // Don't include canary in block average
+                                            canaries.push([idx, raw[idx*4], raw[idx*4+1], raw[idx*4+2]]);
+                                            continue; 
                                         }
 
-                                        // Block Summation
                                         sumR += raw[idx*4];
                                         sumG += raw[idx*4+1];
                                         sumB += raw[idx*4+2];
                                         count++;
                                     }
                                 }
-                                // Save Block: [r, g, b]
                                 if (count > 0) {
-                                    blockSums.push([sumR, sumG, sumB, count]); // Store count to normalize later if needed
+                                    blockSums.push([sumR, sumG, sumB, count]);
                                 }
                             }
                         }
 
-                        // Create a compact JSON payload and Base64 encode it
-                        const fingerprint = {
-                            c: canaries, // Specific pixels for PRNG verification
-                            b: blockSums // Macro-level lighting verification
-                        };
-                        debugData = btoa(JSON.stringify(fingerprint));
+                        // BINARY PACKING
+                        const totalSize = 8 + (canaries.length * 16) + (blockSums.length * 16);
                         
-                        // Client hash still uses full buffer for consistency
-                        hash = ""; // Empty hash for GPU since we verify via debugData
+                        // FIX: Write directly to submitBody
+                        submitBody = new ArrayBuffer(totalSize); 
+                        const view = new DataView(submitBody);
+                        let offset = 0;
+
+                        // 1. Write Canary Count
+                        view.setUint32(offset, canaries.length, true); offset += 4;
+                        // 2. Write Canaries
+                        for (const c of canaries) {
+                            view.setUint32(offset, c[0], true); offset += 4; // Index
+                            view.setFloat32(offset, c[1], true); offset += 4; // R
+                            view.setFloat32(offset, c[2], true); offset += 4; // G
+                            view.setFloat32(offset, c[3], true); offset += 4; // B
+                        }
+
+                        // 3. Write Block Count
+                        view.setUint32(offset, blockSums.length, true); offset += 4;
+                        // 4. Write Blocks
+                        for (const b of blockSums) {
+                            view.setFloat32(offset, b[0], true); offset += 4; // R
+                            view.setFloat32(offset, b[1], true); offset += 4; // G
+                            view.setFloat32(offset, b[2], true); offset += 4; // B
+                            view.setUint32(offset, b[3], true); offset += 4; // Pixel Count
+                        }
+
+                        hash = ""; 
                     } else {
                         hash = await cryptoHash(result.buffer);
                     }
-                    // --- REPLACEMENT END ---
 
-                    const payload = {
-    token: currentToken,
-    clientHash: hash,
-    username: username,
-    threads: parseInt(threadInput.value, 10) || 1,
-    // DELETE OR COMMENT OUT THIS LINE:
-    // rendererType: rendererType, 
-    debugData: debugData
-};
+                    // --- TIMER END: Data Processing ---
+                    const tProcEnd = performance.now();
+                    console.log(`[Perf] Data Processing: ${(tProcEnd - tProcStart).toFixed(2)}ms`);
 
-                    
+                    // --- TIMER START: Network ---
+                    const tNetStart = performance.now();
+
+                    const headers = {
+                        'Content-Type': 'application/octet-stream',
+                        'X-Token': currentToken,
+                        'X-Hash': hash,
+                        'X-Username': username,
+                        'X-Threads': String(parseInt(threadInput.value, 10) || 1), 
+                        'X-Renderer': rendererType || 'cpu'
+                    };
+
                     const subRes = await fetch(`${backendUrl}/api/submit`, {
                         method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json'
-                           
-                        },
-                        body: JSON.stringify(payload)
+                        headers: headers,
+                        body: submitBody // FIX: Pass the binary buffer directly
                     });
+
+                    // --- TIMER END: Network ---
+                    const tNetEnd = performance.now();
+                    console.log(`[Perf] Network Upload: ${(tNetEnd - tNetStart).toFixed(2)}ms`);
 
                     const subJson = await subRes.json();
 
@@ -2025,59 +2151,44 @@ window.addEventListener('resize', scaleResultText);
                          statusDiv.style.color = "#d93025";
                          return; 
                     }
+                    
                     if (subRes.ok) {
- statusDiv.textContent = `Submitted to Pending List! Time: ${(subJson.server_score / 1000).toFixed(3)}s`;
-    statusDiv.style.color = "#ff9800"; 
+                        statusDiv.textContent = `Submitted to Pending List! Time: ${(subJson.server_score / 1000).toFixed(3)}s`;
+                        statusDiv.style.color = "#ff9800"; 
 
-  
-    targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s`;
-    
- 
-    targetTimeEl.style.cssText = ''; 
-    if (targetTimeEl.parentElement) targetTimeEl.parentElement.style.cssText = '';
+                        targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s`;
+                        targetTimeEl.style.cssText = ''; 
+                        if (targetTimeEl.parentElement) targetTimeEl.parentElement.style.cssText = '';
 
-
-    // --- NEW: Switch UI to Pending Mode Automatically ---
                         if (!isPendingView) {
                             isPendingView = true;
-                            // Visual Toggle State
                             lbToggle.classList.remove('verified-mode');
                             lbToggle.classList.add('pending-mode');
-                            // Label Colors
                             lblVerified.classList.remove('active');
                             lblPending.classList.add('active');
-                            // View Visibility
                             viewVerified.classList.remove('active-view');
                             viewPending.classList.add('active-view');
                         }
 
-                        // --- NEW: Slide down to Leaderboard ---
                         document.getElementById('leaderboard-section').scrollIntoView({ behavior: 'smooth' });
 
+                        scaleResultText();
+                        fetchLeaderboard();
+                        
+                        const isGpuRun = (rendererType === 'gpu');
+                        if (lbTypeToggle.checked !== isGpuRun) {
+                            lbTypeToggle.checked = isGpuRun;
+                            lbTypeToggle.dispatchEvent(new Event('change'));
+                        }
 
-    scaleResultText();
-    fetchLeaderboard();
-   
+                        setTimeout(() => {
+                            document.getElementById('leaderboard-section').scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'start' 
+                            });
+                        }, 100);
                     
-                    
-                    const isGpuRun = (rendererType === 'gpu');
-                    
-                   
-                    if (lbTypeToggle.checked !== isGpuRun) {
-                        lbTypeToggle.checked = isGpuRun;
-                       
-                        lbTypeToggle.dispatchEvent(new Event('change'));
-                    }
-
-                 
-                    setTimeout(() => {
-                        document.getElementById('leaderboard-section').scrollIntoView({ 
-                            behavior: 'smooth', 
-                            block: 'start' 
-                        });
-                    }, 100);
-                   
-} else {
+                    } else {
                         if (subJson.error === "CAPTCHA_FAILED") {
                             turnstile.reset();
                             statusDiv.textContent = "Submit CAPTCHA failed. Please try running again.";
@@ -2338,15 +2449,51 @@ window.addEventListener('resize', scaleResultText);
                         } else {
                             if (!entry.debug_data) {
                                 log("❌ GPU Entry missing debug data!");
+                                decision = 'reject'; 
                             } else {
                                 log("Downloading Fingerprint & Running Local GPU Render...");
                                 
                                 // 1. Decode Client Fingerprint (JSON)
-                                let clientFingerprint;
+                                // 1. Decode Client Fingerprint (Binary)
+                                let clientCanaries = [];
+                                let clientBlocks = [];
                                 try {
-                                    clientFingerprint = JSON.parse(atob(entry.debug_data));
+                                    const binaryStr = atob(entry.debug_data);
+                                    const len = binaryStr.length;
+                                    const bytes = new Uint8Array(len);
+                                    for (let k = 0; k < len; k++) bytes[k] = binaryStr.charCodeAt(k);
+                                    
+                                    const view = new DataView(bytes.buffer);
+                                    let offset = 0;
+
+                                    // Read Canaries
+                                    const numCanaries = view.getUint32(offset, true); offset += 4;
+                                    for(let k=0; k<numCanaries; k++) {
+                                        const idx = view.getUint32(offset, true); offset += 4;
+                                        const r = view.getFloat32(offset, true); offset += 4;
+                                        const g = view.getFloat32(offset, true); offset += 4;
+                                        const b = view.getFloat32(offset, true); offset += 4;
+                                        clientCanaries.push([idx, r, g, b]);
+                                    }
+
+                                    // Read Blocks
+                                    const numBlocks = view.getUint32(offset, true); offset += 4;
+                                    for(let k=0; k<numBlocks; k++) {
+                                        const r = view.getFloat32(offset, true); offset += 4;
+                                        const g = view.getFloat32(offset, true); offset += 4;
+                                        const b = view.getFloat32(offset, true); offset += 4;
+                                        const count = view.getUint32(offset, true); offset += 4;
+                                        clientBlocks.push([r, g, b, count]);
+                                    }
                                 } catch(e) {
-                                    log("❌ Failed to parse debug data JSON");
+                                    log("❌ Failed to parse binary debug data: " + e.message);
+                                    
+                     
+                                    await fetch(`${backendUrl}/admin/finalize`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': secret },
+                                        body: JSON.stringify({ id: entry.id, decision: 'reject' })
+                                    });
                                     continue;
                                 }
 
@@ -2362,7 +2509,7 @@ window.addEventListener('resize', scaleResultText);
                                 let blockCount = 0;
                                 
                                 // A. Verify Canaries
-                                const clientCanaries = clientFingerprint.c || [];
+                                //const clientCanaries = clientFingerprint.c || [];
                                 for (let c of clientCanaries) {
                                     let idx = c[0];
                                     let clientR = c[1];
@@ -2376,7 +2523,7 @@ window.addEventListener('resize', scaleResultText);
                                 }
 
                                 // B. Verify Block Sums
-                                const clientBlocks = clientFingerprint.b || [];
+                                //const clientBlocks = clientFingerprint.b || [];
                                 const BLOCK_SIZE = 16;
                                 let bIdx = 0;
                                 
@@ -2500,11 +2647,31 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                     const startTime = performance.now();
                     
                     worker.onmessage = (e) => {
+                        // 0. HANDLE PROGRESS
+                        if (e.data.status === 'progress') {
+                            const percent = (e.data.progress / e.data.total) * 100;
+                            progressFill.style.width = `${percent}%`;
+                            progressText.textContent = `${Math.round(percent)}%`;
+                            return;
+                        }
+
+                        // 0.5 HANDLE PREVIEW (Real Time)
+                        if (e.data.status === 'preview') {
+                            const img = new ImageData(
+                                new Uint8ClampedArray(e.data.imgData), 
+                                renderWidth, 
+                                renderHeight
+                            );
+                            ctx.putImageData(img, 0, 0);
+                            return;
+                        }
+
                         // 1. HANDLE CRASH
+                        
                         if (e.data.status === 'crash') {
                             worker.terminate();
                             alert("The benchmark has stopped abruptly, slow/old devices are still WIP and might often crash");
-                            reject(new Error("WebGL Context Lost"));
+                            reject(new Error("WebGPU Context Lost"));
                             return;
                         }
 
@@ -2537,7 +2704,8 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                         start: true,
                         samples: settings.samples,
                         bounces: settings.maxDepth,
-                        seed: [seedLo, seedHi]
+                        seed: [seedLo, seedHi],
+                        realtime: document.getElementById('realtimeToggle').checked
                     });
                 });
             }
