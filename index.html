@@ -188,21 +188,19 @@
     /* Gradient Text */
     background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
     -webkit-background-clip: text;
+    background-clip: text; /* Added standard property */
     -webkit-text-fill-color: transparent;
     
     display: inline-block;
-    white-space: nowrap; /* Prevents wrapping, forces scaling */
-    font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace; /* Monospace for numbers */
+    white-space: nowrap; 
+    font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace; 
     font-weight: 800;
     line-height: 1.2;
     transition: font-size 0.1s ease-out;
-	/* Ensure it handles potential overflow gracefully if it hits the min size */
     max-width: 100%;
     overflow: hidden;
-    text-overflow: ellipsis; /* Adds "..." if it's somehow STILL too long */
+    text-overflow: ellipsis; 
     
-    /* Improve alignment */
-    display: inline-block;
     vertical-align: middle;
 }
         #results p { margin: 0.5rem 0; font-size: 1.2em; text-align: left; color: #fff; }
@@ -510,13 +508,70 @@
         display: none;
     }
 }
+/* Unified Slider Style */
+.renderer-toggle-container, .lb-toggle-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 15px; /* Added spacing */
+    font-weight: bold;
+}
+
+/* The Switch Background */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 30px;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+
+/* The Slider Track */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #333; /* Neutral Dark */
+  transition: .4s;
+  border-radius: 34px;
+  border: 1px solid #555;
+}
+
+/* The Knob */
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 22px;
+  width: 22px;
+  left: 3px; bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+/* Sliding Animation */
+input:checked + .slider:before { transform: translateX(30px); }
+
+/* Text Labels */
+.renderer-label, .lb-label { 
+    font-size: 1.1em; 
+    color: #666; 
+    transition: color 0.3s; 
+}
+
+/* Active State = GREEN for BOTH sides */
+.renderer-label.active, .lb-label.active { 
+    color: #28a745; /* Green */
+    text-shadow: 0 0 10px rgba(40, 167, 69, 0.4); 
+}
     </style>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.11.1/sha256.min.js"></script>
 </head>
 <body>
     <div id="container">
         <h1>Monolith Pathtracer</h1>
-        <p>A CPU path tracing utility.</p>
+        <p>A path tracing utility.</p>
 
         <canvas id="renderCanvas" width="1600" height="900"></canvas>
         <div id="progressBar"> <div id="progressFill"></div> <div id="progressText"></div> </div>
@@ -568,6 +623,27 @@
            
                 <div class="user-config-box" style="flex: 1; max-width: 500px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #2a2a2a; border-radius: 12px; padding: 20px; border: 1px solid #444; margin-top: 1.2rem;">
                     <h3 style="margin-top: 0; color: #fff;">User Configuration</h3>
+          
+                    <!-- Moved Render Toggle with Warning Tooltip -->
+                    <div class="renderer-toggle-container" style="margin-bottom: 20px;">
+                        <span id="labelCPU" class="renderer-label active">CPU</span>
+                        <label class="switch">
+                            <input type="checkbox" id="rendererToggle">
+                            <span class="slider"></span>
+                        </label>
+                        <span id="labelGPU" class="renderer-label">GPU (WIP)</span>
+                        
+                        <!-- Added Warning Icon -->
+                        <div class="info-icon" tabindex="0" style="margin-left: 0px; width: 18px; height: 18px; font-size: 12px; border-color: #666; color: #aaa;">
+                            ?
+                            <div class="tooltip-content">
+                                <strong style="color: #d93025;">⚠️ Experimental Feature</strong><br><br>
+                                This renderer is currently <strong>under construction</strong>.<br><br>
+                                It may result in a black screen or browser crashes on older/slower devices.<br><br>
+                                Note: random colored walls are normal in this renderer on all devices.
+                            </div>
+                        </div>
+                    </div>
                     
                     <label for="usernameInput" style="margin-bottom: 8px; color: #ccc;">Username (Required):</label>
                     <input type="text" id="usernameInput" placeholder="Enter name (max 20 chars)" maxlength="20" style="text-align: center; font-weight: bold; width: 80%; margin-bottom: 15px;">
@@ -587,7 +663,7 @@
         </div>
 
         <div class="button-group">
-            <button id="startMultiButton" class="benchmark-button start-button">Start Multi-Threaded</button>
+            <button id="startMultiButton" class="benchmark-button start-button">Start</button>
         </div>
         
         <div id="results">
@@ -605,6 +681,17 @@
     
     <div class="leaderboard-controls">
         
+        <!-- 1. The New CPU/GPU Slider -->
+        <div class="lb-toggle-container">
+            <span id="lblLbCPU" class="lb-label active">CPU</span>
+            <label class="switch">
+                <input type="checkbox" id="lbTypeToggle">
+                <span class="slider"></span>
+            </label>
+            <span id="lblLbGPU" class="lb-label">GPU</span>
+        </div>
+
+        <!-- 2. The Existing Verified/Pending Toggle -->
         <div class="toggle-wrapper verified-mode" id="lbToggle">
             <span class="toggle-label active" id="lblVerified">Verified</span>
             <div class="toggle-switch">
@@ -677,16 +764,797 @@
 		<p id="disclaimer">1. Scene initialization may take a few moments, particularly on tests with a high sample count.</p>
 		<p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p>
     </div>
+    <script id="gpu-worker-source" type="javascript/worker">
+    // === WORKER GLOBALS ===
+    let canvas, gl;
+    let width, height;
+    let frameCount = 0;
+    let isRunning = true;
+    
+    // Performance / Fencing Globals
+    let batchSize = 2; 
+    let pendingSync = null;
+    
+    // Settings
+    let targetSamples = 10;
+    let maxBounces = 8;
+    let userSeedLo = 0;
+    let userSeedHi = 0;
+    
+    // Scene Data
+    let bvhNodes = [], orderedPrims = [], materials = [], lightIndices = [];
+    let texNodes, texPrims, texMats, texLights; 
+    let texA, texB, texCompA, texCompB;
+    let fbA, fbB; 
+    let ptProg, dispProg;
+
+    // --- PCG 64-BIT EMULATION FOR GLSL ---
+    const pcgGlsl = `
+    uniform uvec2 uGlobalSeed; // [Low, High]
+    struct PCG_State { uvec2 state; uvec2 inc; };
+    PCG_State pcg_state;
+    uvec2 add64(uvec2 a, uvec2 b) {
+        uint lo = a.x + b.x;
+        uint carry = (lo < a.x) ? 1u : 0u;
+        uint hi = a.y + b.y + carry;
+        return uvec2(lo, hi);
+    }
+    uvec2 mul64(uvec2 a, uvec2 b) {
+        uint lo = a.x * b.x;
+        uint t1 = a.x * b.y; uint t2 = a.y * b.x;
+        uint a_lo = a.x & 0xFFFFu; uint a_hi = a.x >> 16u;
+        uint b_lo = b.x & 0xFFFFu; uint b_hi = b.x >> 16u;
+        uint p0 = a_lo * b_lo; uint p1 = a_lo * b_hi; uint p2 = a_hi * b_lo;
+        uint cy = (p0 >> 16u) + (p1 & 0xFFFFu) + (p2 & 0xFFFFu);
+        uint hi_carry = cy >> 16u; uint hi = t1 + t2 + hi_carry;
+        return uvec2(lo, hi);
+    }
+    const uvec2 PCG_MULT = uvec2(0x4C957F2Du, 0x5851F42Du);
+    void reset_prng_for_tile(int x, int y, int width) {
+        uvec2 seed_mix = mul64(uGlobalSeed, PCG_MULT);
+        uvec2 pixel_index = uvec2(uint(y * width + x), 0u);
+        uvec2 p1 = add64(pixel_index, uvec2(1u, 0u));
+        pcg_state.state = uvec2(p1.x ^ seed_mix.x, p1.y ^ seed_mix.y);
+        uvec2 p2 = uvec2(pixel_index.x << 1u, pixel_index.y << 1u | (pixel_index.x >> 31u));
+        p2 = add64(p2, uvec2(1u, 0u));
+        pcg_state.inc = uvec2(p2.x ^ seed_mix.x, p2.y ^ seed_mix.y);
+    }
+    uint pcg32_random() {
+        uvec2 oldstate = pcg_state.state;
+        uvec2 mul = mul64(oldstate, PCG_MULT);
+        uvec2 inc_or_1 = uvec2(pcg_state.inc.x | 1u, pcg_state.inc.y);
+        pcg_state.state = add64(mul, inc_or_1);
+        uint xs_lo = (oldstate.x >> 18u) | (oldstate.y << 14u);
+        uint xs_hi = (oldstate.y >> 18u);
+        uint xor_lo = xs_lo ^ oldstate.x; uint xor_hi = xs_hi ^ oldstate.y;
+        uint rot_base = (xor_lo >> 27u) | (xor_hi << 5u);
+        uint rot = oldstate.y >> 27u; 
+        return (rot_base >> rot) | (rot_base << ((-rot) & 31u));
+    }
+    float rand() { return float(pcg32_random()) / 4294967296.0; }
+    `;
+
+    // 1. SCENE BUILDER
+    function buildScene() {
+        primitives = []; bvhNodes = []; materials = []; orderedPrims = []; lightIndices = [];
+        let bvhBuildInfo = []; let originalLightPrimIndices = [];
+        const Vec3 = {
+            add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
+            sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
+            mul: (a, s) => [a[0]*s, a[1]*s, a[2]*s],
+            dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+            cross: (a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]],
+            norm: (a) => { let l = Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]); return l===0?[0,0,0]:[a[0]/l,a[1]/l,a[2]/l]; },
+            min: (a, b) => [Math.min(a[0],b[0]), Math.min(a[1],b[1]), Math.min(a[2],b[2])],
+            max: (a, b) => [Math.max(a[0],b[0]), Math.max(a[1],b[1]), Math.max(a[2],b[2])],
+            len: (a) => Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2])
+        };
+        function addMaterial(albedo, emissive, rough, metal, ior, trans) { materials.push({albedo, emissive, rough, metal, ior, trans}); return materials.length - 1; }
+        function addRect(p0, p1, p2, p3, n, mat, isLight=false) {
+            let idx = primitives.length;
+            let v0 = Vec3.sub(p1, p0); let v1 = Vec3.sub(p3, p0); let norm = Vec3.norm(n);
+            let d00 = Vec3.dot(v0, v0); let d11 = Vec3.dot(v1, v1); let d01 = Vec3.dot(v0, v1);
+            let det = d00*d11 - d01*d01; let invDet = Math.abs(det)<1e-9?0:1.0/det;
+            let d = Vec3.dot(p0, norm); let area = Vec3.len(Vec3.cross(v0, v1));
+            primitives.push({type:1, p0, v0, v1, n:norm, area, d00, d11, d01, invDet, d, mat, _originalIdx:idx});
+            let eps=0.05; let min=[Math.min(p0[0],p1[0],p2[0],p3[0])-eps, Math.min(p0[1],p1[1],p2[1],p3[1])-eps, Math.min(p0[2],p1[2],p2[2],p3[2])-eps];
+            let max=[Math.max(p0[0],p1[0],p2[0],p3[0])+eps, Math.max(p0[1],p1[1],p2[1],p3[1])+eps, Math.max(p0[2],p1[2],p2[2],p3[2])+eps];
+            bvhBuildInfo.push({idx, bounds:{min,max}, centroid:Vec3.mul(Vec3.add(min,max),0.5)});
+            if(isLight) originalLightPrimIndices.push(idx);
+            return idx;
+        }
+        function addBox(c, s, mat) {
+            let h = Vec3.mul(s,0.5);
+            let p0=[c[0]-h[0],c[1]-h[1],c[2]-h[2]], p7=[c[0]+h[0],c[1]+h[1],c[2]+h[2]];
+            let p1=[p7[0],p0[1],p0[2]], p2=[p7[0],p7[1],p0[2]], p3=[p0[0],p7[1],p0[2]];
+            let p4=[p0[0],p0[1],p7[2]], p5=[p7[0],p0[1],p7[2]], p6=[p0[0],p7[1],p7[2]];
+            addRect(p0,p1,p2,p3,[0,0,-1],mat); addRect(p5,p4,p6,p7,[0,0,1],mat);
+            addRect(p1,p5,p7,p2,[1,0,0],mat); addRect(p4,p0,p3,p6,[-1,0,0],mat);
+            addRect(p3,p2,p7,p6,[0,1,0],mat); addRect(p0,p4,p5,p1,[0,-1,0],mat);
+        }
+        function addSphere(pos, r, mat) {
+            let idx = primitives.length;
+            primitives.push({type:0, c:pos, r2:r*r, mat, invR:1.0/r, _originalIdx:idx});
+            let bounds = {min:Vec3.sub(pos,[r,r,r]), max:Vec3.add(pos,[r,r,r])};
+            bvhBuildInfo.push({idx, bounds, centroid:pos});
+        }
+        function strongHash(v) { v^=v>>>15; v=Math.imul(v,0x469e0db1); v^=v>>>17; v=Math.imul(v,0x1b873593); v^=v>>>13; return v>>>0; }
+        function getRandomColor(id) {
+            let h = strongHash(userSeedLo ^ id);
+            let r=(h&0x3FF)/1023.0, g=((h>>10)&0x3FF)/1023.0, b=((h>>20)&0x3FF)/1023.0;
+            return [0.2+r*0.8, 0.2+g*0.8, 0.2+b*0.8];
+        }
+        const white = addMaterial(getRandomColor(1), [0,0,0], 0, 0, 1.5, 0); 
+        const red   = addMaterial(getRandomColor(2),   [0,0,0], 0, 0, 1.5, 0); 
+        const green = addMaterial(getRandomColor(3),   [0,0,0], 0, 0, 1.5, 0); 
+        const light = addMaterial([0,0,0],          [10,10,10], 0, 0, 1.5, 0);
+        const glass = addMaterial([1,1,1],          [0,0,0], 0, 0, 1.5, 1.0); 
+        const gold  = addMaterial([0.86,0.7,0.2],   [0,0,0], 0.15, 1.0, 1.5, 0); 
+        const floor = addMaterial([0.78,0.78,0.78], [0,0,0], 0.2, 0.6, 1.5, 0); 
+        let d = 30.0;
+        addRect([-d,-d,d],[d,-d,d],[d,-d,-d],[-d,-d,-d], [0,1,0], floor);
+        addRect([-d,d,d],[-d,d,-d],[d,d,-d],[d,d,d], [0,-1,0], white);
+        addRect([-d,-d,-d],[d,-d,-d],[d,d,-d],[-d,d,-d], [0,0,1], white);
+        addRect([-d,-d,d],[-d,-d,-d],[-d,d,-d],[-d,d,d], [1,0,0], green);
+        addRect([d,-d,d],[d,-d,-d],[d,d,-d],[d,d,d], [-1,0,0], red);
+        addRect([-d,-d,d],[d,-d,d],[d,d,d],[-d,d,d], [0,0,-1], white);
+        let sz = [24, 8, 8]; let fy = -d; 
+        let s1y = fy + sz[1]/2.0, s1z = 0; let s2y = s1y + sz[1], s2z = s1z + sz[2]; let s3y = s2y + sz[1], s3z = s2z + sz[2];
+        addBox([0, s1y, s1z], sz, gold); addBox([0, s2y, s2z], sz, gold); addBox([0, s3y, s3z], sz, gold);
+        let sr = 4.0; let spy = sz[1]/2.0 + sr; let xd = 8.0; let zo = 0.21;
+        [-xd, 0, xd].forEach(x => addSphere([x, s1y+spy, s1z-zo], sr, glass));
+        [-xd, 0, xd].forEach(x => addSphere([x, s2y+spy, s2z-zo], sr, glass));
+        [-xd, 0, xd].forEach(x => addSphere([x, s3y+spy, s3z-zo], sr, glass));
+        [-xd, 0, xd].forEach(x => addSphere([x, fy+sr, -8], sr, glass));
+        let ld = 8.0; addRect([-ld, d-0.2, ld], [ld, d-0.2, ld], [ld, d-0.2, -ld], [-ld, d-0.2, -ld], [0,-1,0], light, true);
+        let originalToOrdered = new Array(primitives.length).fill(-1);
+        let stack = [{start: 0, end: bvhBuildInfo.length, nodeIdx: 0, parent: -1}];
+        bvhNodes.push({});
+        function surroundingBox(b0, b1) { return { min: Vec3.min(b0.min, b1.min), max: Vec3.max(b0.max, b1.max) }; }
+        while (stack.length > 0) {
+            let task = stack.pop(); let idx = task.nodeIdx;
+            if (idx === -1) { idx = bvhNodes.length; bvhNodes.push({}); bvhNodes[task.parent].secondChild = idx; }
+            let start = task.start, end = task.end, nPrims = end - start;
+            let bounds = bvhBuildInfo[start].bounds;
+            for(let i = start + 1; i < end; i++) bounds = surroundingBox(bounds, bvhBuildInfo[i].bounds);
+            bvhNodes[idx].min = bounds.min; bvhNodes[idx].max = bounds.max;
+            if (nPrims <= 4) {
+                bvhNodes[idx].primOffset = orderedPrims.length; bvhNodes[idx].nPrims = nPrims;
+                bvhNodes[idx].axis = 0; bvhNodes[idx].secondChild = 0;
+                for(let i = start; i < end; i++) {
+                    let origIdx = bvhBuildInfo[i].idx;
+                    originalToOrdered[origIdx] = orderedPrims.length; orderedPrims.push(primitives[origIdx]);
+                }
+                continue;
+            }
+            let bestCost = 1e30, bestAxis = -1, bestSplit = -1;
+            let ext = Vec3.sub(bounds.max, bounds.min);
+            let saRoot = 2.0 * (ext[0]*ext[1] + ext[0]*ext[2] + ext[1]*ext[2]);
+            for(let axis = 0; axis < 3; axis++) {
+                bvhBuildInfo.slice(start, end).sort((a,b) => a.centroid[axis] - b.centroid[axis]).forEach((v, i) => bvhBuildInfo[start+i] = v);
+                let areaRight = new Float32Array(nPrims); let boxR = bvhBuildInfo[end-1].bounds; areaRight[nPrims-1] = 0;
+                for(let i = nPrims - 2; i >= 0; i--) { 
+                    boxR = surroundingBox(boxR, bvhBuildInfo[start+i+1].bounds); 
+                    let e = Vec3.sub(boxR.max, boxR.min); areaRight[i] = 2.0 * (e[0]*e[1] + e[0]*e[2] + e[1]*e[2]); 
+                }
+                let boxL = bvhBuildInfo[start].bounds;
+                for(let i = 0; i < nPrims - 1; i++) {
+                    boxL = surroundingBox(boxL, bvhBuildInfo[start+i].bounds); 
+                    let e = Vec3.sub(boxL.max, boxL.min); 
+                    let saL = 2.0 * (e[0]*e[1] + e[0]*e[2] + e[1]*e[2]);
+                    let cost = 0.125 + ((i+1)*saL + (nPrims-1-i)*areaRight[i]) / saRoot;
+                    if(cost < bestCost) { bestCost = cost; bestAxis = axis; bestSplit = start + i + 1; }
+                }
+            }
+            if (bestAxis === -1) {
+                bvhNodes[idx].primOffset = orderedPrims.length; bvhNodes[idx].nPrims = nPrims;
+                bvhNodes[idx].axis = 0; bvhNodes[idx].secondChild = 0;
+                for(let i = start; i < end; i++) {
+                    let origIdx = bvhBuildInfo[i].idx;
+                    originalToOrdered[origIdx] = orderedPrims.length; orderedPrims.push(primitives[origIdx]);
+                }
+                continue;
+            }
+            bvhBuildInfo.slice(start, end).sort((a,b) => a.centroid[bestAxis] - b.centroid[bestAxis]).forEach((v, i) => bvhBuildInfo[start+i] = v);
+            bvhNodes[idx].axis = bestAxis; bvhNodes[idx].nPrims = 0;
+            stack.push({start: bestSplit, end: end, nodeIdx: -1, parent: idx}); 
+            bvhNodes.push({}); 
+            stack.push({start: start, end: bestSplit, nodeIdx: bvhNodes.length-1, parent: -1});
+        }
+        lightIndices = originalLightPrimIndices.map(origIdx => originalToOrdered[origIdx]);
+    }
+
+    // 2. SHADERS
+    const vsSource = `#version 300 es
+    in vec2 pos; void main() { gl_Position = vec4(pos, 0, 1); }`;
+
+    const fsSource = `#version 300 es
+    precision highp float; precision highp int;
+    layout(location = 0) out vec4 outColor;
+    layout(location = 1) out vec4 outComp;
+    uniform vec2 uRes; uniform int uFrame; 
+    uniform vec3 uCamPos, uCamBL, uCamH, uCamV;
+    uniform vec3 uCamRight, uCamUp;
+    uniform float uFocalDist, uLensRadius;
+    uniform int uNumLights, uMaxBounces;
+    uniform sampler2D uNodes, uPrims, uMats, uLights, uAccum, uComp;
+    #define PI 3.14159265359
+    #define MAX_FLOAT 1e30
+    #define EPSILON 0.05
+    ${pcgGlsl}
+    
+    // Structs & Helpers
+    struct Node { vec3 minB; int primOffset; vec3 maxB; int nPrims; int axis; int secondChild; };
+    int toInt(float f) { return int(floor(f + 0.5)); }
+    Node getNode(int i) {
+        vec4 d0 = texelFetch(uNodes, ivec2(0, i), 0); vec4 d1 = texelFetch(uNodes, ivec2(1, i), 0); vec4 d2 = texelFetch(uNodes, ivec2(2, i), 0);
+        return Node(d0.xyz, toInt(d0.w), d1.xyz, toInt(d1.w), toInt(d2.x), toInt(d2.y));
+    }
+    vec4 getP(int idx, int off) { return texelFetch(uPrims, ivec2(off, idx), 0); }
+    struct Material { vec3 albedo; vec3 emissive; float metal; float rough; float ior; float trans; };
+    Material getMat(int idx) {
+        vec4 d0 = texelFetch(uMats, ivec2(0, idx), 0); vec4 d1 = texelFetch(uMats, ivec2(1, idx), 0); vec4 d2 = texelFetch(uMats, ivec2(2, idx), 0);
+        return Material(d0.rgb, d1.rgb, d2.x, d2.y, d2.z, d2.w);
+    }
+    int getLightIdx(int i) { return toInt(texelFetch(uLights, ivec2(0, i), 0).r); }
+    struct Ray { vec3 o, d, invD; }; struct Hit { float t; int idx; int type; }; struct Surface { vec3 p, n; bool front; int mat; };
+    float pow5(float x) { float x2 = x*x; return x2*x2*x; }
+    float safe_sqrt(float x) { return sqrt(max(0.0, x)); }
+    vec3 safeInverse(vec3 d) {
+        const float eps = 1e-6;
+        return vec3(abs(d.x)>eps?1.0/d.x:(d.x>=0.0?1.0/eps:-1.0/eps), abs(d.y)>eps?1.0/d.y:(d.y>=0.0?1.0/eps:-1.0/eps), abs(d.z)>eps?1.0/d.z:(d.z>=0.0?1.0/eps:-1.0/eps));
+    }
+    void create_basis(vec3 n, out vec3 t, out vec3 b) { vec3 up = abs(n.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0); t = normalize(cross(up, n)); b = cross(n, t); }
+    float intersect_sphere(int idx, Ray r, float tMin, float tMax) {
+        vec4 p0 = getP(idx, 0); vec4 p1 = getP(idx, 1);
+        vec3 center = p0.yzw; float r2 = p1.x;
+        vec3 oc = r.o - center; float b = dot(oc, r.d); float c = dot(oc, oc) - r2;
+        float disc = b*b - c; if (disc < 0.0) return MAX_FLOAT;
+        float sq = sqrt(disc); float t = -b - sq;
+        if (t > tMin && t < tMax) return t;
+        t = -b + sq; if (t > tMin && t < tMax) return t;
+        return MAX_FLOAT;
+    }
+    float intersect_rect(int idx, Ray r, float tMin, float tMax) {
+        vec4 p0 = getP(idx, 0); vec4 p1 = getP(idx, 1); vec4 p2 = getP(idx, 2);
+        vec4 p3 = getP(idx, 3); vec4 p5 = getP(idx, 5);
+        vec3 normal = p3.xyz; float d = p5.x; float denom = dot(normal, r.d);
+        if (abs(denom) < 1e-4) return MAX_FLOAT;
+        float t = (d - dot(r.o, normal)) / denom;
+        if (t < tMin || t > tMax) return MAX_FLOAT;
+        vec3 p = r.o + r.d * t;
+        vec3 corner = p0.yzw; vec3 v0 = p1.yzw; vec3 v1 = p2.yzw; vec3 v2 = p - corner;
+        float dot00 = dot(v0, v0); float dot01 = dot(v0, v1); float dot02 = dot(v0, v2);
+        float dot11 = dot(v1, v1); float dot12 = dot(v1, v2);
+        float invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01);
+        float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+        float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+        if (u >= -0.01 && v >= -0.01 && u <= 1.01 && v <= 1.01) return t;
+        return MAX_FLOAT;
+    }
+    bool traverse(Ray r, inout Hit best, float tMax) {
+        bool hit = false; best.t = tMax; best.idx = -1; int stack[32]; int ptr = 0; int nodeIdx = 0;
+        for(int k = 0; k < 128; k++) { 
+            Node node = getNode(nodeIdx);
+            vec3 t0 = (node.minB - r.o) * r.invD; vec3 t1 = (node.maxB - r.o) * r.invD;
+            vec3 tsmaller = min(t0, t1); vec3 tbigger = max(t0, t1);
+            float tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z); float tm = min(min(tbigger.x, tbigger.y), tbigger.z);
+            if (tm >= max(EPSILON, tmin) && tmin < best.t) {
+                if (node.nPrims > 0) {
+                    for(int i = 0; i < node.nPrims; i++) {
+                        int pIdx = node.primOffset + i;
+                        float typeVal = getP(pIdx, 0).x; int type = toInt(typeVal);
+                        float t = (type == 0) ? intersect_sphere(pIdx, r, EPSILON, best.t) : intersect_rect(pIdx, r, EPSILON, best.t);
+                        if (t < best.t) { hit = true; best.t = t; best.idx = pIdx; best.type = type; }
+                    }
+                    if (ptr == 0) break; nodeIdx = stack[--ptr];
+                } else {
+                    float dAxis = (node.axis == 0) ? r.d.x : ((node.axis == 1) ? r.d.y : r.d.z);
+                    bool dirNeg = dAxis < 0.0;
+                    int near = dirNeg ? node.secondChild : (nodeIdx + 1); int far = dirNeg ? (nodeIdx + 1) : node.secondChild;
+                    stack[ptr++] = far; nodeIdx = near;
+                }
+            } else { if (ptr == 0) break; nodeIdx = stack[--ptr]; }
+        }
+        return hit;
+    }
+    vec3 getVisibility(Ray r, float tMax) {
+        vec3 transmission = vec3(1.0); int stack[32]; int ptr = 0; int nodeIdx = 0;
+        for(int k = 0; k < 64; k++) {
+            Node node = getNode(nodeIdx);
+            vec3 t0 = (node.minB - r.o) * r.invD; vec3 t1 = (node.maxB - r.o) * r.invD;
+            float tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+            float tm = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+            if (tm >= max(EPSILON, tmin) && tmin < tMax) {
+                if (node.nPrims > 0) {
+                    for(int i = 0; i < node.nPrims; i++) {
+                        int pIdx = node.primOffset + i; int type = toInt(getP(pIdx, 0).x);
+                        float t = (type == 0) ? intersect_sphere(pIdx, r, EPSILON, tMax) : intersect_rect(pIdx, r, EPSILON, tMax);
+                        if (t < tMax) {
+                            int mIdx = (type == 0) ? toInt(getP(pIdx, 1).y) : toInt(getP(pIdx, 5).y);
+                            Material m = getMat(mIdx);
+                            if (m.trans > 0.0) { transmission *= (m.albedo * 0.7); if (dot(transmission, transmission) < 0.0001) return vec3(0.0); } 
+                            else return vec3(0.0);
+                        }
+                    }
+                    if (ptr == 0) break; nodeIdx = stack[--ptr];
+                } else {
+                    float dAxis = (node.axis == 0) ? r.d.x : ((node.axis == 1) ? r.d.y : r.d.z);
+                    int near = (dAxis < 0.0) ? node.secondChild : (nodeIdx + 1); int far = (dAxis < 0.0) ? (nodeIdx + 1) : node.secondChild;
+                    stack[ptr++] = far; nodeIdx = near;
+                }
+            } else { if (ptr == 0) break; nodeIdx = stack[--ptr]; }
+        }
+        return transmission;
+    }
+    void getSurface(Ray r, Hit h, out Surface s) {
+        s.p = r.o + r.d * h.t;
+        if (h.type == 0) {
+            vec4 p0 = getP(h.idx, 0); vec4 p1 = getP(h.idx, 1);
+            vec3 center = p0.yzw; float invR = p1.z; s.n = (s.p - center) * invR; s.mat = toInt(p1.y);
+        } else { s.n = getP(h.idx, 3).xyz; s.mat = toInt(getP(h.idx, 5).y); }
+        s.front = dot(r.d, s.n) < 0.0; if (!s.front) s.n = -s.n;
+    }
+    float fresnel_schlick(float cosTheta, float ior) {
+        float r0 = (1.0 - ior) / (1.0 + ior); r0 = r0 * r0; return r0 + (1.0 - r0) * pow5(1.0 - cosTheta);
+    }
+    vec3 sample_ggx(vec3 N, float roughness) {
+        vec2 u = vec2(rand(), rand()); float a = roughness * roughness; float a2 = a * a; float phi = 2.0 * PI * u.x; 
+        float cosT = safe_sqrt((1.0 - u.y) / ((a2 - 1.0) * u.y + 1.0)); float sinT = safe_sqrt(1.0 - cosT * cosT);
+        vec3 H = vec3(cos(phi) * sinT, sin(phi) * sinT, cosT); vec3 t, b; create_basis(N, t, b); return normalize(t * H.x + b * H.y + N * H.z);
+    }
+    vec3 sample_cosine(vec3 N) {
+        vec2 u = vec2(rand(), rand()); float r = sqrt(u.x); float theta = 2.0 * PI * u.y;
+        vec3 p = vec3(r * cos(theta), r * sin(theta), safe_sqrt(1.0 - u.x)); vec3 t, b; create_basis(N, t, b); return normalize(t * p.x + b * p.y + N * p.z);
+    }
+
+    void main() {
+        // 1. INIT RNG & STATE
+        reset_prng_for_tile(int(gl_FragCoord.x), int(gl_FragCoord.y), int(uRes.x));
+        vec4 oldSum = texelFetch(uAccum, ivec2(gl_FragCoord.xy), 0);
+        vec4 oldComp = texelFetch(uComp, ivec2(gl_FragCoord.xy), 0);
+        if (uFrame == 0) { oldSum = vec4(0.0); oldComp = vec4(0.0); }
+        
+        vec3 acc = vec3(0.0);
+        int pixelIndex = int(gl_FragCoord.y) * int(uRes.x) + int(gl_FragCoord.x);
+
+        // 2. CRITICAL CANARY CHECK (Done BEFORE mixing frame to ensure pure verification)
+        if ((pixelIndex % 1009) == 0) {
+            uint h = pcg32_random(); 
+            acc = vec3(float(h & 0xFFu)/255.0, float((h>>8u)&0xFFu)/255.0, float((h>>16u)&0xFFu)/255.0);
+            oldComp = vec4(0.0);
+        } 
+        else {
+            // >>> FIX: MIX FRAME INTO RNG FOR PATH TRACING <<<
+            // This ensures every frame (sample) has a unique noise pattern, allowing accumulation to work.
+            // We use XOR to perturb the state cheaply but effectively.
+            pcg_state.state.x ^= uint(uFrame * 1973); 
+            pcg_state.state.y ^= uint(uFrame * 9277);
+
+            vec2 jitter = vec2(rand(), rand()) - 0.5;
+            vec2 uv = (gl_FragCoord.xy + jitter) / uRes;
+            vec3 target = uCamBL + uCamH * uv.x + uCamV * uv.y; 
+            vec3 dir = normalize(target - uCamPos);
+            vec3 focusPoint = uCamPos + dir * uFocalDist; 
+            float angle = 2.0 * PI * rand(); 
+            float radius = uLensRadius * sqrt(rand());
+            vec3 lensOffset = uCamRight * (radius * cos(angle)) + uCamUp * (radius * sin(angle));
+            vec3 origin = uCamPos + lensOffset; 
+            vec3 rayDir = normalize(focusPoint - origin);
+            Ray r; r.o = origin; r.d = rayDir; r.invD = safeInverse(r.d);
+            vec3 att = vec3(1.0); 
+            bool lastBounceSpecular = true;
+
+            for (int depth = 0; depth < uMaxBounces; depth++) {
+                Hit hit;
+                if (!traverse(r, hit, MAX_FLOAT)) {
+                    vec3 unit_d = normalize(r.d); float t = 0.5 * (unit_d.y + 1.0);
+                    vec3 sky = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t); acc += sky * att * 0.5; break;
+                }
+                Surface surf; getSurface(r, hit, surf); Material mat = getMat(surf.mat);
+                if (dot(mat.emissive, mat.emissive) > 0.0) { if (depth == 0 || lastBounceSpecular) { acc += mat.emissive * att; } break; }
+                
+                bool isGlass = (mat.trans > rand()); bool isMetal = (rand() < mat.metal); 
+                vec3 nextDir; vec3 V = -r.d;
+                if (isGlass) {
+                    lastBounceSpecular = true;
+                    if (!surf.front) att *= exp(-(vec3(1.0) - mat.albedo) * hit.t * 0.5);
+                    float eta = surf.front ? (1.0 / mat.ior) : mat.ior;
+                    float cosI = clamp(dot(V, surf.n), -1.0, 1.0); 
+                    float sin2T = eta * eta * (1.0 - cosI * cosI); 
+                    float F = fresnel_schlick(abs(cosI), mat.ior);
+                    if (sin2T > 1.0 || F > rand()) { nextDir = reflect(r.d, surf.n); r.o = surf.p + surf.n * 0.01; } 
+                    else {
+                        float cosT = safe_sqrt(1.0 - sin2T);
+                        nextDir = normalize(r.d * eta + surf.n * (eta * cosI - cosT));
+                        r.o = surf.p - surf.n * 0.01;
+                    }
+                    if (surf.front) att *= mat.albedo;
+                    r.d = nextDir; r.invD = safeInverse(r.d);
+                } else {
+                     if (uNumLights > 0) {
+                        int lIdx = int(floor(rand() * float(uNumLights))); lIdx = min(lIdx, uNumLights - 1); int lPrim = getLightIdx(lIdx);
+                        vec4 lp0 = getP(lPrim, 0); vec4 lp1 = getP(lPrim, 1); vec4 lp2 = getP(lPrim, 2); vec4 lp3 = getP(lPrim, 3); vec4 lp5 = getP(lPrim, 5);
+                        vec3 lightNormal = lp3.xyz; float lightArea = lp1.x; vec3 lightPoint = lp0.yzw + lp1.yzw * rand() + lp2.yzw * rand();
+                        vec3 toLight = lightPoint - surf.p; float dist = length(toLight); vec3 L = toLight / dist;
+                        float NdotL = dot(surf.n, L); float lightCos = max(dot(lightNormal, -L), 0.0);
+                        if (NdotL > 0.0 && lightCos > 1e-6) {
+                            Ray shadowRay; shadowRay.o = surf.p + surf.n * EPSILON; shadowRay.d = L; shadowRay.invD = safeInverse(L);
+                            vec3 vis = getVisibility(shadowRay, dist - 2.0 * EPSILON);
+                            if (dot(vis, vis) > 0.0) {
+                                float pdf = dist * dist / (lightArea * lightCos * float(uNumLights));
+                                if (pdf > 0.0) acc += att * getMat(toInt(lp5.y)).emissive * (mat.albedo / PI) * NdotL * vis / pdf;
+                            }
+                        }
+                    }
+                    if (isMetal) {
+                        lastBounceSpecular = true; vec3 H = sample_ggx(surf.n, mat.rough); nextDir = reflect(-V, H);
+                        if (dot(nextDir, surf.n) <= 0.0) nextDir = sample_cosine(surf.n); att *= mat.albedo;
+                    } else {
+                        float F = fresnel_schlick(clamp(dot(V, surf.n), 0.0, 1.0), 1.5) * (1.0 - mat.rough); 
+                        if (rand() < F) { lastBounceSpecular = true; nextDir = reflect(r.d, surf.n); } 
+                        else { lastBounceSpecular = false; nextDir = sample_cosine(surf.n); att *= mat.albedo; }
+                    }
+                    r.o = surf.p + surf.n * 0.01; 
+                    r.d = normalize(nextDir); r.invD = safeInverse(r.d);
+                }
+                
+                // STANDARD RUSSIAN ROULETTE (Efficient, uses standard rand)
+                if (depth > 3) { 
+                    float p = max(att.r, max(att.g, att.b)); 
+                    if (rand() > p) break; 
+                    att /= p; 
+                }
+            }
+            acc = min(acc, vec3(5.0));
+            if (dot(acc, acc) < 0.0 || isnan(dot(acc, acc))) acc = vec3(0.0);
+        }
+
+        // 4. KAHAN ACCUMULATION
+        vec3 y = acc - oldComp.rgb;
+        vec3 t = oldSum.rgb + y;
+        vec3 c = (t - oldSum.rgb) - y;
+        outColor = vec4(t, 1.0);
+        outComp = vec4(c, 1.0);
+    }`;
+    const displayVs = `#version 300 es
+    in vec2 pos; out vec2 uv; void main() { 
+        // Flip Y (1.0 - y) to match CPU renderer orientation
+        uv = vec2(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5)); 
+        gl_Position = vec4(pos, 0, 1); 
+    }`;
+    
+    const displayFs = `#version 300 es
+    precision highp float; in vec2 uv; uniform sampler2D tex; uniform float uSamples; uniform vec2 uRes; out vec4 color;
+    vec3 aces(vec3 x) { const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14; return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0); }
+    void main() { 
+        ivec2 coord = ivec2(floor(uv * uRes));
+        int idx = coord.y * int(uRes.x) + coord.x;
+        if ((idx % 1009) == 0) coord.x = min(coord.x + 1, int(uRes.x) - 1);
+        vec4 data = texelFetch(tex, coord, 0);
+        vec3 c = data.rgb / max(1.0, uSamples); 
+        c = aces(c); c = pow(c, vec3(1.0 / 2.2)); 
+        color = vec4(c, 1.0); 
+    }`;
+
+    function createProg(vs, fs) {
+        let p = gl.createProgram();
+        let v = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(v, vs); gl.compileShader(v);
+        let f = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(f, fs); gl.compileShader(f);
+        if (!gl.getShaderParameter(v, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(v));
+        if (!gl.getShaderParameter(f, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(f));
+        gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
+        return p;
+    }
+    function createDataTex(data, width, height) {
+        let t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, data);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        return t;
+    }
+    function initGL() {
+        gl = canvas.getContext("webgl2", { powerPreference: "high-performance", alpha: false, preserveDrawingBuffer: true });
+        gl.getExtension("EXT_color_buffer_float"); gl.getExtension("OES_texture_float_linear");
+        ptProg = createProg(vsSource, fsSource); 
+        dispProg = createProg(displayVs, displayFs);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        const nodeData = new Float32Array(bvhNodes.length * 12);
+        bvhNodes.forEach((n, i) => {
+            let b = i * 12;
+            nodeData[b+0] = n.min[0]; nodeData[b+1] = n.min[1]; nodeData[b+2] = n.min[2]; nodeData[b+3] = n.primOffset || 0;
+            nodeData[b+4] = n.max[0]; nodeData[b+5] = n.max[1]; nodeData[b+6] = n.max[2]; nodeData[b+7] = n.nPrims || 0;
+            nodeData[b+8] = n.axis || 0; nodeData[b+9] = n.secondChild || 0;
+        });
+        texNodes = createDataTex(nodeData, 3, bvhNodes.length);
+        const primData = new Float32Array(orderedPrims.length * 24);
+        orderedPrims.forEach((p, i) => {
+            let b = i * 24;
+            primData[b+0] = p.type;
+            if (p.type === 0) { 
+                primData[b+1] = p.c[0]; primData[b+2] = p.c[1]; primData[b+3] = p.c[2]; primData[b+4] = p.r2; primData[b+5] = p.mat; primData[b+6] = p.invR;
+            } else { 
+                primData[b+1] = p.p0[0]; primData[b+2] = p.p0[1]; primData[b+3] = p.p0[2]; primData[b+4] = p.area; 
+                primData[b+5] = p.v0[0]; primData[b+6] = p.v0[1]; primData[b+7] = p.v0[2];
+                primData[b+9] = p.v1[0]; primData[b+10] = p.v1[1]; primData[b+11] = p.v1[2];
+                primData[b+12] = p.n[0]; primData[b+13] = p.n[1]; primData[b+14] = p.n[2];
+                primData[b+16] = p.d00; primData[b+17] = p.d11; primData[b+18] = p.d01; primData[b+19] = p.invDet;
+                primData[b+20] = p.d; primData[b+21] = p.mat;
+            }
+        });
+        texPrims = createDataTex(primData, 6, orderedPrims.length);
+        const matData = new Float32Array(materials.length * 12);
+        materials.forEach((m, i) => {
+            let b = i * 12;
+            matData[b+0] = m.albedo[0]; matData[b+1] = m.albedo[1]; matData[b+2] = m.albedo[2];
+            matData[b+4] = m.emissive[0]; matData[b+5] = m.emissive[1]; matData[b+6] = m.emissive[2];
+            matData[b+8] = m.metal; matData[b+9] = m.rough; matData[b+10] = m.ior; matData[b+11] = m.trans;
+        });
+        texMats = createDataTex(matData, 3, materials.length);
+        const lightData = new Float32Array(Math.max(lightIndices.length, 1) * 4);
+        lightIndices.forEach((idx, i) => { lightData[i * 4] = idx; });
+        texLights = createDataTex(lightData, 1, Math.max(lightIndices.length, 1));
+        canvas.width = width; canvas.height = height; gl.viewport(0, 0, width, height);
+        const makeRenderTarget = () => {
+            let t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            return t;
+        };
+        texA = makeRenderTarget(); texCompA = makeRenderTarget();
+        texB = makeRenderTarget(); texCompB = makeRenderTarget();
+        fbA = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); 
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texA, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texCompA, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+        fbB = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); 
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texB, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texCompB, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    }
+    function setupStaticUniforms() {
+        gl.useProgram(ptProg);
+        
+        // --- 1. Math Helpers (Scoped here to avoid dependency issues) ---
+        const V3 = {
+            sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
+            add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
+            mul: (a, s) => [a[0]*s, a[1]*s, a[2]*s],
+            cross: (a, b) => [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]],
+            norm: (a) => { let l = Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]); return l===0?[0,0,0]:[a[0]/l,a[1]/l,a[2]/l]; }
+        };
+
+        // --- 2. Camera Setup (Matches CPU/Cornell Box) ---
+        let camPos = [0, -5, -25]; 
+        let lookAt = [0, -15, 4];
+        let fwd = V3.norm(V3.sub(lookAt, camPos)); 
+        let worldUp = [0, 1, 0];
+        let right = V3.norm(V3.cross(worldUp, fwd)); // [1, 0, 0] roughly
+        let up = V3.cross(fwd, right);
+        
+        let focalDist = 22.0; 
+        let lensRadius = 0.025;
+        let fov = 75 * Math.PI / 180;
+        
+        // Viewport calculation
+        let h = Math.tan(fov / 2); 
+        let ar = width / height;
+        let viewportH = 2.0 * h; 
+        let viewportW = ar * viewportH;
+        
+        let horizontal = V3.mul(right, viewportW * focalDist); 
+        let vertical = V3.mul(up, viewportH * focalDist);
+        
+        // Lower Left Corner = Origin + Fwd*Focal - H/2 - V/2
+        let center = V3.add(camPos, V3.mul(fwd, focalDist));
+        let halfH = V3.mul(horizontal, 0.5);
+        let halfV = V3.mul(vertical, 0.5);
+        let llc = V3.sub(V3.sub(center, halfH), halfV);
+
+        // --- 3. Upload Uniforms ---
+        gl.uniform2f(gl.getUniformLocation(ptProg, "uRes"), width, height);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uMaxBounces"), maxBounces);
+        gl.uniform2uiv(gl.getUniformLocation(ptProg, "uGlobalSeed"), [userSeedLo, userSeedHi]);
+        
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamPos"), camPos);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamBL"), llc);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamH"), horizontal);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamV"), vertical);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamRight"), right);
+        gl.uniform3fv(gl.getUniformLocation(ptProg, "uCamUp"), up);
+        gl.uniform1f(gl.getUniformLocation(ptProg, "uFocalDist"), focalDist);
+        gl.uniform1f(gl.getUniformLocation(ptProg, "uLensRadius"), lensRadius);
+        gl.uniform1i(gl.getUniformLocation(ptProg, "uNumLights"), lightIndices.length);
+
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texNodes); gl.uniform1i(gl.getUniformLocation(ptProg, "uNodes"), 0);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texPrims); gl.uniform1i(gl.getUniformLocation(ptProg, "uPrims"), 1);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, texMats); gl.uniform1i(gl.getUniformLocation(ptProg, "uMats"), 2);
+        gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, texLights); gl.uniform1i(gl.getUniformLocation(ptProg, "uLights"), 3);
+    }
+
+    function loop() {
+        if (!isRunning) return;
+
+        // Fencing / Anti-Freeze Logic
+        if (pendingSync) {
+            let status = gl.clientWaitSync(pendingSync, 0, 0);
+            if (status === gl.TIMEOUT_EXPIRED) {
+                // GPU Busy, yield
+                // if (batchSize > 1) batchSize--;
+                setTimeout(loop, 0); 
+                return;
+            } else {
+                // GPU Done, ramp up
+                //if (batchSize < 2000) batchSize++; 
+                gl.deleteSync(pendingSync);
+                pendingSync = null;
+            }
+        }
+
+        gl.useProgram(ptProg);
+        gl.viewport(0, 0, width, height);
+        
+        // Dynamic Batch Loop
+        for(let i=0; i<batchSize; i++) {
+            if (frameCount >= targetSamples) break;
+            
+            let readSum = frameCount % 2 === 0 ? texB : texA;
+            let readComp = frameCount % 2 === 0 ? texCompB : texCompA;
+            let writeFb = frameCount % 2 === 0 ? fbA : fbB;
+
+            gl.uniform1i(gl.getUniformLocation(ptProg, "uFrame"), frameCount);
+            gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, readSum); gl.uniform1i(gl.getUniformLocation(ptProg, "uAccum"), 4);
+            gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, readComp); gl.uniform1i(gl.getUniformLocation(ptProg, "uComp"), 5);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, writeFb);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            frameCount++;
+        }
+
+        // Set Fence
+        pendingSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        gl.flush(); 
+
+        if (frameCount >= targetSamples) {
+            isRunning = false;
+            // 1. Display
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.useProgram(dispProg);
+            gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB);
+            gl.uniform1i(gl.getUniformLocation(dispProg, "tex"), 0);
+            gl.uniform1f(gl.getUniformLocation(dispProg, "uSamples"), frameCount);
+            gl.uniform2f(gl.getUniformLocation(dispProg, "uRes"), width, height);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            // 2. Read Display Pixels (Visual)
+            let displayPixels = new Uint8Array(width * height * 4);
+            gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, displayPixels);
+
+            // 3. Read Raw Data (Hash)
+            let rawFb = gl.createFramebuffer(); 
+            gl.bindFramebuffer(gl.FRAMEBUFFER, rawFb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, (frameCount - 1) % 2 === 0 ? texA : texB, 0);
+            let rawPixels = new Float32Array(width * height * 4);
+            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, rawPixels);
+
+            self.postMessage({ 
+                status: "finished", 
+                imgData: displayPixels.buffer, 
+                hashData: rawPixels.buffer 
+            }, [displayPixels.buffer, rawPixels.buffer]);
+            return;
+        }
+        setTimeout(loop, 0);
+    }
+
+    self.onmessage = function(e) {
+        if (e.data.init) { 
+            canvas = e.data.canvas; 
+            width = e.data.width || e.data.w; 
+            height = e.data.height || e.data.h;
+            
+            // >>> INSERT THIS BLOCK <<<
+            canvas.addEventListener('webglcontextlost', function(event) {
+                event.preventDefault();
+                self.postMessage({ status: 'crash' });
+            });
+            // >>> END INSERT <<<
+        }
+        // ... rest of the code ...
+        if (e.data.start) {
+            targetSamples = e.data.samples; 
+            
+            // FIX: Clamp Max Bounces to 12.
+            // The server sends 512, which causes TDR (Timeout) crashes on Mobile GPUs.
+            // 12 is sufficient for Global Illumination convergence in this scene.
+            // Use the value from the Settings API directly (Server now controls this)
+            maxBounces = e.data.bounces;
+            
+            userSeedLo = e.data.seed[0]; userSeedHi = e.data.seed[1];
+            
+            // Re-init if context was lost or scene changed
+            if (!gl || gl.isContextLost()) {
+                buildScene(); 
+                initGL(); 
+                setupStaticUniforms();
+            } else {
+                // Just update uniforms if GL is alive
+                gl.useProgram(ptProg);
+                gl.uniform1i(gl.getUniformLocation(ptProg, "uMaxBounces"), maxBounces);
+                gl.uniform2uiv(gl.getUniformLocation(ptProg, "uGlobalSeed"), [userSeedLo, userSeedHi]);
+                // Ensure other uniforms are valid (cam, etc) just in case
+                setupStaticUniforms(); 
+            }
+            
+            frameCount = 0; isRunning = true;
+            
+            // Reset Accumulators
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbA); gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbB); gl.clear(gl.COLOR_BUFFER_BIT);
+            
+            // Reset Batch Size for safety on new run
+            batchSize = 2;
+            
+            loop(); 
+        }
+    };
+</script>
     <script>
         (function() {
             let currentRenderSettings = null; 
             const startMultiButton = document.getElementById('startMultiButton');
 			const lbToggle = document.getElementById('lbToggle');
+            // State
+            let rendererType = 'cpu'; // 'cpu' or 'gpu'
+            let leaderboardFilter = 'cpu';
 const viewVerified = document.getElementById('viewVerified');
 const viewPending = document.getElementById('viewPending');
 const lblVerified = document.getElementById('lblVerified');
 const lblPending = document.getElementById('lblPending');
+// TOGGLE LOGIC
+            const rendererToggle = document.getElementById('rendererToggle');
+            const labelCPU = document.getElementById('labelCPU');
+            const labelGPU = document.getElementById('labelGPU');
+            const threadGroup = document.getElementById('threadInput').parentElement;
 
+            rendererToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    rendererType = 'gpu';
+                    labelCPU.classList.remove('active');
+                    labelGPU.classList.add('active');
+                    threadGroup.style.opacity = '0.3'; 
+                    document.getElementById('threadInput').disabled = true;
+                } else {
+                    rendererType = 'cpu';
+                    labelGPU.classList.remove('active');
+                    labelCPU.classList.add('active');
+                    threadGroup.style.opacity = '1';
+                    document.getElementById('threadInput').disabled = false;
+                }
+                // Refresh settings to update samples display
+                fetchSceneSettings();
+            });
+            // NEW LEADERBOARD TOGGLE LOGIC
+            const lbTypeToggle = document.getElementById('lbTypeToggle');
+            const lblLbCPU = document.getElementById('lblLbCPU');
+            const lblLbGPU = document.getElementById('lblLbGPU');
+
+            lbTypeToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    leaderboardFilter = 'gpu';
+                    lblLbCPU.classList.remove('active');
+                    lblLbGPU.classList.add('active');
+                } else {
+                    leaderboardFilter = 'cpu';
+                    lblLbGPU.classList.remove('active');
+                    lblLbCPU.classList.add('active');
+                }
+                fetchLeaderboard();
+            });
 let isPendingView = false;
             const threadInput = document.getElementById('threadInput');
             const canvas = document.getElementById('renderCanvas');
@@ -993,7 +1861,7 @@ window.addEventListener('resize', scaleResultText);
 
                 try {
                     const scene = sceneSelector.value;
-                    const res = await fetch(`${backendUrl}/api/start?scene=${scene}`, {
+                    const res = await fetch(`${backendUrl}/api/start?scene=${scene}&type=${rendererType}`, {
 					    method: 'POST',
                         headers: { 'X-Turnstile-Token': startToken },
 						cache: 'no-store'
@@ -1040,36 +1908,105 @@ window.addEventListener('resize', scaleResultText);
                     
                     await prepareWasm(scene);
                     
-                    const result = await runBenchmark(
-                        numThreads, 
-                        currentRenderSettings.samples, 
-                        currentRenderSettings.tileSize, 
-                        currentRenderSettings.maxDepth, 
-                        scene, 
-                        currentRenderSettings.denoiser, 
-                        0, 
-                        currentRenderSettings.noiseThreshold, 
-                        seedLo,
-                        seedHi  
-                    );
+                    let result;
+                    if (rendererType === 'cpu') {
+                        result = await runBenchmark(
+                            numThreads, currentRenderSettings.samples, currentRenderSettings.tileSize, 
+                            currentRenderSettings.maxDepth, scene, currentRenderSettings.denoiser, 
+                            0, currentRenderSettings.noiseThreshold, seedLo, seedHi
+                        );
+                    } else {
+                        result = await runGpuBenchmark(currentRenderSettings, seedLo, seedHi, targetTimeEl);
+                    }
+
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
-					scaleResultText(); 
+                    scaleResultText(); 
                     progressText.textContent = 'Render Done. Uploading...';
-                    
-                  
                     
                     statusDiv.textContent = "Validating & Uploading...";
                     statusDiv.style.color = "#ff9800"; 
 
-                    const ctx = canvas.getContext('2d');
-                    const hash = await cryptoHash(result.buffer);
+                    // Hash Logic
+                    // For GPU, we need to extract Canaries + Blocks for 'debugData'
+                    let debugData = null;
+                    let hash = "";
                     
+                    // --- REPLACEMENT START: GPU Data Compression ---
+                    if (rendererType === 'gpu') {
+                        // COMPRESSION: Instead of sending the full buffer (25MB+), 
+                        // we create a "fingerprint" consisting of Block Sums and Canaries.
+                        // This fits easily into D1 (SQLITE_TOOBIG fix).
+                        
+                        const raw = new Float32Array(result.buffer);
+                        const BLOCK_SIZE = 16;
+                        const w = renderWidth;
+                        const h = renderHeight;
+                        
+                        let blockSums = [];
+                        let canaries = [];
+
+                        for (let by = 0; by < h; by += BLOCK_SIZE) {
+                            for (let bx = 0; bx < w; bx += BLOCK_SIZE) {
+                                let sumR = 0, sumG = 0, sumB = 0;
+                                let count = 0;
+                                
+                                for (let y = 0; y < BLOCK_SIZE; y++) {
+                                    for (let x = 0; x < BLOCK_SIZE; x++) {
+                                        let cx = bx + x; 
+                                        let cy = by + y;
+                                        if (cx >= w || cy >= h) continue;
+
+                                        let idx = cy * w + cx;
+                                        
+                                        // Canary Extraction
+                                        if ((idx % 1009) === 0) {
+                                            // Save format: [index, r, g, b]
+                                            canaries.push([
+                                                idx, 
+                                                raw[idx*4], 
+                                                raw[idx*4+1], 
+                                                raw[idx*4+2]
+                                            ]);
+                                            continue; // Don't include canary in block average
+                                        }
+
+                                        // Block Summation
+                                        sumR += raw[idx*4];
+                                        sumG += raw[idx*4+1];
+                                        sumB += raw[idx*4+2];
+                                        count++;
+                                    }
+                                }
+                                // Save Block: [r, g, b]
+                                if (count > 0) {
+                                    blockSums.push([sumR, sumG, sumB, count]); // Store count to normalize later if needed
+                                }
+                            }
+                        }
+
+                        // Create a compact JSON payload and Base64 encode it
+                        const fingerprint = {
+                            c: canaries, // Specific pixels for PRNG verification
+                            b: blockSums // Macro-level lighting verification
+                        };
+                        debugData = btoa(JSON.stringify(fingerprint));
+                        
+                        // Client hash still uses full buffer for consistency
+                        hash = ""; // Empty hash for GPU since we verify via debugData
+                    } else {
+                        hash = await cryptoHash(result.buffer);
+                    }
+                    // --- REPLACEMENT END ---
+
                     const payload = {
-                        token: currentToken,
-                        clientHash: hash,
-                        username: username,
-                        threads: parseInt(threadInput.value, 10) || 1
-                    };
+    token: currentToken,
+    clientHash: hash,
+    username: username,
+    threads: parseInt(threadInput.value, 10) || 1,
+    // DELETE OR COMMENT OUT THIS LINE:
+    // rendererType: rendererType, 
+    debugData: debugData
+};
 
                     
                     const subRes = await fetch(`${backendUrl}/api/submit`, {
@@ -1120,8 +2057,27 @@ window.addEventListener('resize', scaleResultText);
 
     scaleResultText();
     fetchLeaderboard();
-} else {
+   
+                    
+                    
+                    const isGpuRun = (rendererType === 'gpu');
+                    
+                   
+                    if (lbTypeToggle.checked !== isGpuRun) {
+                        lbTypeToggle.checked = isGpuRun;
                        
+                        lbTypeToggle.dispatchEvent(new Event('change'));
+                    }
+
+                 
+                    setTimeout(() => {
+                        document.getElementById('leaderboard-section').scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'start' 
+                        });
+                    }, 100);
+                   
+} else {
                         if (subJson.error === "CAPTCHA_FAILED") {
                             turnstile.reset();
                             statusDiv.textContent = "Submit CAPTCHA failed. Please try running again.";
@@ -1150,20 +2106,30 @@ window.addEventListener('resize', scaleResultText);
             
 
             async function fetchSceneSettings() {
-			fetchLeaderboard();
+                // Trigger LB update visual only
+                fetchLeaderboard();
+                
                 const scene = sceneSelector.value;
                 const display = document.getElementById('settingsDisplay');
                 display.textContent = "Fetching settings from server...";
                 document.getElementById('startMultiButton').disabled = true;
+                
                 try {
-                    const res = await fetch(`${backendUrl}/api/settings?scene=${scene}`);
+                    // PASS rendererType to the API
+                    const res = await fetch(`${backendUrl}/api/settings?scene=${scene}&renderer=${rendererType}`);
                     if (!res.ok) throw new Error("Failed to load settings");
+                    
                     currentRenderSettings = await res.json();
+                    
+                    // Note: No client-side multiplication needed anymore.
+                    
                     display.innerHTML = `Target: ${currentRenderSettings.resolution} | Samples: ${currentRenderSettings.samples}<br>Ray Bounces: ${currentRenderSettings.maxDepth} | Tile Size: ${currentRenderSettings.tileSize}px`;
+                    
                     const [w, h] = currentRenderSettings.resolution.split('x').map(Number);
                     canvas.width = w; canvas.height = h; renderWidth = w; renderHeight = h;
                     document.getElementById('startMultiButton').disabled = false;
                 } catch (e) {
+                    console.error(e);
                     display.textContent = "Error loading settings. Check connection.";
                 }
             }
@@ -1201,9 +2167,11 @@ window.addEventListener('resize', scaleResultText);
                          return;
                     }
 
-                    // 2. Client-side Split
-                    const verifiedEntries = data.filter(r => r.status === 'verified');
-                    const pendingEntries = data.filter(r => r.status === 'pending');
+                    // 2. Client-side Split & Filter
+                    // Only show rows that match the selected filter (cpu/gpu)
+                    const filteredData = data.filter(r => (r.renderer_type || 'cpu') === leaderboardFilter);
+                    const verifiedEntries = filteredData.filter(r => r.status === 'verified');
+                    const pendingEntries = filteredData.filter(r => r.status === 'pending');
 
                     // 3. Helper to render rows
                     const renderRows = (entries, tbody) => {
@@ -1270,11 +2238,17 @@ window.addEventListener('resize', scaleResultText);
             fetchLeaderboard();
 
             document.getElementById('startMultiButton').addEventListener('click', () => {
+                // If GPU is selected, thread input is disabled/irrelevant, 
+                // but startBenchmark handles that internally based on rendererType.
                 let numThreads = parseInt(threadInput.value, 10);
+                
+                // Fallback for safety
                 if (isNaN(numThreads) || numThreads <= 0) {
                     numThreads = navigator.hardwareConcurrency || 4;
                     threadInput.value = numThreads;
                 }
+                
+                // Triggers the branching logic in startBenchmark
                 startBenchmark(numThreads, multiThreadTimeEl);
             });
 			
@@ -1285,15 +2259,10 @@ window.addEventListener('resize', scaleResultText);
 
                 const loopOutput = document.getElementById('loopOutput');
                 
-                
                 const log = (msg) => {
                     const timestamp = new Date().toLocaleTimeString();
                     const newEntry = `[${timestamp}] ${msg}\n`;
-                    
-                 
                     loopOutput.value = newEntry + loopOutput.value;
-
-                
                     if (loopOutput.value.length > 20000) {
                         loopOutput.value = loopOutput.value.substring(0, 20000) + "\n...[Truncated]...";
                     }
@@ -1303,7 +2272,6 @@ window.addEventListener('resize', scaleResultText);
                 isBenchmarkRunning = true;
 
                 try {
-                    
                     log("Fetching pending entries...");
                     const listRes = await fetch(`${backendUrl}/admin/pending`, {
                         headers: { 'X-Admin-Secret': secret }
@@ -1320,57 +2288,149 @@ window.addEventListener('resize', scaleResultText);
 
                     log(`Found ${entries.length} entries. Starting render loop...`);
 
-                
                     for (let i = 0; i < entries.length; i++) {
                         const entry = entries[i];
-                        log(`\nVerifying ID ${entry.id} (${entry.username})...`);
+                        const isGpu = (entry.renderer_type === 'gpu');
+                        
+                        log(`\nVerifying ID ${entry.id} (${entry.username}) [${isGpu ? "GPU" : "CPU"}]...`);
                         log(`Scene: ${entry.scene} | Seed (Raw): ${entry.seed}`);
 
-                      
-                        await prepareWasm(entry.scene);
-                        
-                     
-                        const settingsRes = await fetch(`${backendUrl}/api/settings?scene=${entry.scene}`);
+                        // Fetch the EXACT settings used for this entry type (CPU or GPU)
+                        const settingsRes = await fetch(`${backendUrl}/api/settings?scene=${entry.scene}&renderer=${entry.renderer_type || 'cpu'}`);
                         const settings = await settingsRes.json();
-const [w, h] = settings.resolution.split('x').map(Number);
-canvas.width = w; 
-canvas.height = h; 
-renderWidth = w;   
-renderHeight = h;  
+                        
+                        const [w, h] = settings.resolution.split('x').map(Number);
+                        canvas.width = w; 
+                        canvas.height = h; 
+                        renderWidth = w;   
+                        renderHeight = h;
                        
                         const [seedLo, seedHi] = hashStringTo64Bit(entry.seed.toString());
                         log(`Processed Seed: [Lo: ${seedLo}, Hi: ${seedHi}] (64-bit)`);
 
-                      
-                        const result = await runBenchmark(
-                            12,
-                            settings.samples,
-                            settings.tileSize,
-                            settings.maxDepth,
-                            entry.scene,
-                            settings.denoiser,
-                            0, 
-                            settings.noiseThreshold,
-                            seedLo,
-                            seedHi 
-                        );
-
-                        const calculatedHash = await cryptoHash(result.buffer);
-
-                        log(`Render Time: ${result.time.toFixed(2)}s`);
-                        log(`Client Hash:   ${entry.client_hash.substring(0, 15)}...`);
-                        log(`Verified Hash: ${calculatedHash.substring(0, 15)}...`);
-
-                     
                         let decision = 'reject';
-                        if (calculatedHash === entry.client_hash) {
-                            decision = 'approve';
-                            log("✅ MATCH! Approving...");
-                        } else {
-                            log("❌ MISMATCH! Rejecting...");
-                        }
+                        let reason = 'Mismatch';
 
-                        
+                        if (!isGpu) {
+                            await prepareWasm(entry.scene);
+                            const result = await runBenchmark(
+                                12,
+                                settings.samples,
+                                settings.tileSize,
+                                settings.maxDepth,
+                                entry.scene,
+                                settings.denoiser,
+                                0, 
+                                settings.noiseThreshold,
+                                seedLo,
+                                seedHi 
+                            );
+                            const calculatedHash = await cryptoHash(result.buffer);
+                            log(`Client Hash:   ${entry.client_hash.substring(0, 15)}...`);
+                            log(`Verified Hash: ${calculatedHash.substring(0, 15)}...`);
+                            if (calculatedHash === entry.client_hash) {
+                                decision = 'approve';
+                                log("✅ MATCH! Approving...");
+                            } else {
+                                log("❌ MISMATCH! Rejecting...");
+                            }
+                        // --- REPLACEMENT START: GPU Verification Logic ---
+                        } else {
+                            if (!entry.debug_data) {
+                                log("❌ GPU Entry missing debug data!");
+                            } else {
+                                log("Downloading Fingerprint & Running Local GPU Render...");
+                                
+                                // 1. Decode Client Fingerprint (JSON)
+                                let clientFingerprint;
+                                try {
+                                    clientFingerprint = JSON.parse(atob(entry.debug_data));
+                                } catch(e) {
+                                    log("❌ Failed to parse debug data JSON");
+                                    continue;
+                                }
+
+                                // 2. Run Admin GPU Render (Full Resolution)
+                          
+                                // We render the FULL image locally to generate our own ground truth
+                                const adminResult = await runGpuBenchmark(settings, seedLo, seedHi, { textContent: "" });
+                                const adminBuffer = new Float32Array(adminResult.buffer);
+
+                                // 3. Compare Client Fingerprint vs Admin Ground Truth
+                                let canaryFail = 0;
+                                let blockDiffSum = 0;
+                                let blockCount = 0;
+                                
+                                // A. Verify Canaries
+                                const clientCanaries = clientFingerprint.c || [];
+                                for (let c of clientCanaries) {
+                                    let idx = c[0];
+                                    let clientR = c[1];
+                                    // Get Admin's value at this exact pixel
+                                    // Since admin rendered locally with same seed, it should match EXACTLY (or very close)
+                                    let adminR = adminBuffer[idx*4];
+                                    
+                                    if (Math.abs(clientR - adminR) > 0.1) {
+                                        canaryFail++;
+                                    }
+                                }
+
+                                // B. Verify Block Sums
+                                const clientBlocks = clientFingerprint.b || [];
+                                const BLOCK_SIZE = 16;
+                                let bIdx = 0;
+                                
+                                for (let by = 0; by < h; by += BLOCK_SIZE) {
+                                    for (let bx = 0; bx < w; bx += BLOCK_SIZE) {
+                                        if (bIdx >= clientBlocks.length) break;
+                                        
+                                        // Calculate ADMIN Block Sum
+                                        let adminSumR = 0, adminSumG = 0, adminSumB = 0;
+                                        
+                                        for (let y = 0; y < BLOCK_SIZE; y++) {
+                                            for (let x = 0; x < BLOCK_SIZE; x++) {
+                                                let cx = bx + x; let cy = by + y;
+                                                if (cx >= w || cy >= h) continue;
+                                                let idx = cy * w + cx;
+                                                if ((idx % 1009) === 0) continue; // Skip canary
+
+                                                adminSumR += adminBuffer[idx*4];
+                                                adminSumG += adminBuffer[idx*4+1];
+                                                adminSumB += adminBuffer[idx*4+2];
+                                            }
+                                        }
+
+                                        // Compare with CLIENT Block Sum
+                                        let cBlock = clientBlocks[bIdx];
+                                        // cBlock = [sumR, sumG, sumB, count]
+                                        
+                                        let dR = Math.abs(cBlock[0] - adminSumR);
+                                        let dG = Math.abs(cBlock[1] - adminSumG);
+                                        let dB = Math.abs(cBlock[2] - adminSumB);
+                                        
+                                        // Normalized Difference (Relative to brightness)
+                                        let totalBright = adminSumR + adminSumG + adminSumB + 1.0;
+                                        blockDiffSum += (dR + dG + dB) / totalBright;
+                                        blockCount++;
+                                        bIdx++;
+                                    }
+                                }
+                                
+                                let avgDiff = (blockDiffSum / Math.max(1, blockCount)) * 100;
+                                log(`Canary Mismatch: ${canaryFail} | Block Variance: ${avgDiff.toFixed(4)}%`);
+                                
+                                if (canaryFail > 0 || avgDiff > 5.0) { // Tolerance
+                                    decision = 'reject';
+                                    reason = `High Variance (${avgDiff.toFixed(1)}%)`;
+                                    log(`❌ REJECTING: ${reason}`);
+                                } else {
+                                    decision = 'approve';
+                                    log("✅ GPU Integrity Check Passed.");
+                                }
+                            }
+                        }
+                        // --- REPLACEMENT END ---
+
                         const finRes = await fetch(`${backendUrl}/admin/finalize`, {
                             method: 'POST',
                             headers: { 
@@ -1423,6 +2483,65 @@ renderHeight = h;
         viewVerified.classList.add('active-view');
     }
 });
+function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
+                return new Promise((resolve, reject) => {
+                    const blob = new Blob([document.getElementById('gpu-worker-source').textContent], { type: "text/javascript" });
+                    const worker = new Worker(window.URL.createObjectURL(blob));
+                    
+                    const offscreen = new OffscreenCanvas(renderWidth, renderHeight);
+                    
+                    worker.postMessage({ 
+                        init: true, 
+                        canvas: offscreen, 
+                        w: renderWidth, 
+                        h: renderHeight 
+                    }, [offscreen]);
+                    
+                    const startTime = performance.now();
+                    
+                    worker.onmessage = (e) => {
+                        // 1. HANDLE CRASH
+                        if (e.data.status === 'crash') {
+                            worker.terminate();
+                            alert("The benchmark has stopped abruptly, slow/old devices are still WIP and might often crash");
+                            reject(new Error("WebGL Context Lost"));
+                            return;
+                        }
+
+                        // 2. HANDLE SUCCESS
+                        if (e.data.status === 'finished') {
+                            const totalTime = (performance.now() - startTime) / 1000;
+                            
+                            if (e.data.imgData) {
+                                const img = new ImageData(
+                                    new Uint8ClampedArray(e.data.imgData), 
+                                    renderWidth, 
+                                    renderHeight
+                                );
+                                ctx.putImageData(img, 0, 0);
+                            }
+
+                            worker.terminate();
+                            resolve({ time: totalTime, buffer: e.data.hashData });
+                        }
+                    };
+                    
+                    // 3. HANDLE SCRIPT ERRORS
+                    worker.onerror = (e) => {
+                        worker.terminate();
+                        alert("The benchmark has stopped abruptly, slow devices are still WIP and might often crash");
+                        reject(new Error("Worker Script Error"));
+                    };
+                    
+                    worker.postMessage({
+                        start: true,
+                        samples: settings.samples,
+                        bounces: settings.maxDepth,
+                        seed: [seedLo, seedHi]
+                    });
+                });
+            }
+        
         })();
     </script>
 </body>
