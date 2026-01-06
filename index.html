@@ -7,7 +7,7 @@
     <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-    <title>Monolith Pathtracer</title>
+    <title>CPUBALL</title>
     <style>
 	/* Add this at the very top of your CSS */
 *, *::before, *::after {
@@ -570,7 +570,7 @@ input:checked + .slider:before { transform: translateX(30px); }
 </head>
 <body>
     <div id="container">
-        <h1>Monolith Pathtracer</h1>
+        <h1>CPUBall Reimagined</h1>
         <p>A path tracing utility.</p>
 
         <canvas id="renderCanvas" width="1600" height="900"></canvas>
@@ -762,7 +762,7 @@ input:checked + .slider:before { transform: translateX(30px); }
 </div>
         <br><br><h3>Please note:</h3>
 		<p id="disclaimer">1. Scene initialization may take a few moments, particularly on tests with a high sample count.</p>
-		<p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p>
+		<!-- <p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p> -->
     </div>
     <script id="gpu-worker-source" type="javascript/worker">
     // === WORKER GLOBALS ===
@@ -1856,7 +1856,7 @@ window.addEventListener('resize', scaleResultText);
                 document.getElementById('usernameInput').disabled = true;
                 document.getElementById('sceneSelector').disabled = true;
                 
-                statusDiv.textContent = "Initializing...";
+                statusDiv.textContent = "Rendering...";
                 statusDiv.style.color = "#fff";
 
                 try {
