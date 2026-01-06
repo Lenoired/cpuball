@@ -796,7 +796,7 @@ input:checked + .slider:before { transform: translateX(30px); }
     let isRunning = true;
     
     // Performance settings
-    let batchSize = 1; 
+    let batchSize = 3; 
     let targetSamples = 10;
     let maxBounces = 8;
     let realtime = false; // New flag
@@ -1496,23 +1496,27 @@ input:checked + .slider:before { transform: translateX(30px); }
 
         // 2. PACED RENDER LOOP (No Batching, just Pipelining)
         
-        // Update Static Uniforms (Camera etc) - Optimization: Only needed once, but safe here
+        // 2. PACED RENDER LOOP (Static Batching)
         updateUniforms(); 
-        // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
-        // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
-        // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
-        device.queue.writeBuffer(bufUniforms, 8, new Uint32Array([frameCount]));
 
-        const encoder = device.createCommandEncoder();
-        const pass = encoder.beginComputePass();
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
-        // LINEAR DISPATCH: 64 threads per group, flat array
-        pass.dispatchWorkgroups(Math.ceil((width * height) / 64), 1, 1);
-        pass.end();
-        device.queue.submit([encoder.finish()]);
+        for (let i = 0; i < batchSize; i++) {
+            // Stop immediately if we hit the target
+            if (frameCount >= targetSamples) break;
 
-        frameCount++;
+            // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
+            device.queue.writeBuffer(bufUniforms, 8, new Uint32Array([frameCount]));
+
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            // LINEAR DISPATCH: 64 threads per group, flat array
+            pass.dispatchWorkgroups(Math.ceil((width * height) / 64), 1, 1);
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+
+            frameCount++;
+        }
 
         // REAL TIME PREVIEW (Every 5 frames, if enabled)
         if (realtime && frameCount % 5 === 0) {
