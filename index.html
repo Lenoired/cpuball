@@ -2316,8 +2316,8 @@ window.addEventListener('resize', scaleResultText);
                             const threadTd = document.createElement('td'); 
                             threadTd.style.padding = "8px"; 
                             threadTd.style.textAlign = "center"; 
-                            threadTd.style.color = "#aaa"; 
-                            threadTd.textContent = row.threads || "-"; 
+                            threadTd.style.color = "#aaa";
+                            threadTd.textContent = (row.threads > 0) ? row.threads : "-";
                             
                             const timeTd = document.createElement('td'); 
                             timeTd.style.padding = "8px"; 
