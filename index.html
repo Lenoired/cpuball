@@ -9,7 +9,6 @@
 	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <title>CPUBALL</title>
     <style>
-	/* Add this at the very top of your CSS */
 *, *::before, *::after {
     box-sizing: border-box;
 }
@@ -161,21 +160,21 @@
         #stopButton:not(:disabled) { background-color: var(--button-secondary-bg); }
         #stopButton:not(:disabled):hover { background-color: var(--button-secondary-hover); }
 
-        /* Glassmorphism Card for Results */
+        
 #results {
     margin-top: 2rem;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px); /* Optional: adds blur behind card */
+    backdrop-filter: blur(10px); 
     padding: 2rem;
     border-radius: 16px;
-    display: block; /* Changed from inline-block for better centering */
+    display: block; 
     width: 100%;
-    max-width: 400px; /* Limits width so scaling kicks in */
+    max-width: 400px; 
     margin-left: auto;
     margin-right: auto;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    overflow: hidden; /* Essential for the scaler */
+    overflow: hidden; 
     transition: transform 0.2s ease;
 }
 
@@ -185,10 +184,10 @@
 }
 
 #multiThreadTime {
-    /* Gradient Text */
+    
     background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
     -webkit-background-clip: text;
-    background-clip: text; /* Added standard property */
+    background-clip: text; 
     -webkit-text-fill-color: transparent;
     
     display: inline-block;
@@ -218,10 +217,10 @@
 
         @media (max-width: 768px) {
     body {
-        /* Stop using Flex on mobile, it causes the "off-center" shift when scrolling */
+        
         display: block; 
         padding: 0;
-        background-color: var(--surface-color); /* Match container color for seamless look */
+        background-color: var(--surface-color); 
     }
 
     #container {
@@ -229,29 +228,29 @@
         max-width: 100%;
         margin: 0;
         border-radius: 0;
-        /* Reduce padding so the Turnstile (300px) fits on small screens */
+        
         padding: 10px; 
         box-shadow: none;
-        overflow-x: hidden; /* prevents the grey box itself from causing scroll */
+        overflow-x: hidden; 
     }
 
-    /* Fix the User Config Box to fit the Turnstile */
+    
     .user-config-box {
         width: 100% !important;
         min-width: 0 !important;
-        padding: 10px !important; /* Critical: gives space for the captcha */
+        padding: 10px !important; 
         margin-left: 0;
         margin-right: 0;
         box-sizing: border-box;
     }
 
-    /* Force the canvas to fit */
+    
     canvas {
         max-width: 100%;
         height: auto;
     }
 
-    /* Fix the Result Card */
+    
     #results {
         width: 100%;
         box-sizing: border-box; 
@@ -273,7 +272,7 @@
     background-color: var(--input-bg-color);
     color: var(--primary-text-color);
 }
-/* Tooltip Wrapper */
+
 .tooltip-wrapper {
     display: flex;
     align-items: center;
@@ -282,7 +281,7 @@
     margin-bottom: 10px;
 }
 
-/* The '?' Circle */
+
 .info-icon {
     display: inline-flex;
     align-items: center;
@@ -304,7 +303,7 @@
     color: white;
 }
 
-/* The Popup Text Box */
+
 .tooltip-content {
     visibility: hidden;
     width: 260px;
@@ -319,21 +318,21 @@
     font-weight: normal;
     line-height: 1.4;
     
-    /* Position specific */
-    position: absolute;
-    bottom: 135%; /* Sits above the question mark */
-    left: 50%;
-    margin-left: -130px; /* Centers the box */
     
-    /* Animation */
+    position: absolute;
+    bottom: 135%; 
+    left: 50%;
+    margin-left: -130px; 
+    
+    
     opacity: 0;
     transition: opacity 0.3s, transform 0.3s;
     transform: translateY(10px);
     z-index: 100;
-    pointer-events: none; /* Allows mouse to pass through when hidden */
+    pointer-events: none; 
 }
 
-/* The little arrow pointing down */
+
 .tooltip-content::after {
     content: "";
     position: absolute;
@@ -345,7 +344,7 @@
     border-color: #222 transparent transparent transparent;
 }
 
-/* Logic: When hovering or focusing the icon, show the content */
+
 .info-icon:hover .tooltip-content,
 .info-icon:focus .tooltip-content {
     visibility: visible;
@@ -356,7 +355,7 @@
     opacity: 0.5;
     pointer-events: none;
 }
-/* Toggle Switch Container */
+
 .leaderboard-controls {
     display: flex;
     flex-direction: column;
@@ -382,7 +381,7 @@
     border-color: #666;
 }
 
-/* The clickable labels */
+
 .toggle-label {
     font-size: 1.1em;
     font-weight: bold;
@@ -394,7 +393,7 @@
     color: #fff;
 }
 
-/* The Pill Switch */
+
 .toggle-switch {
     position: relative;
     width: 50px;
@@ -404,7 +403,7 @@
     transition: background-color 0.3s ease;
 }
 
-/* The Sliding Knob */
+
 .toggle-knob {
     position: absolute;
     top: 3px;
@@ -417,9 +416,9 @@
     box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
-/* Active State (Pending) */
+
 .toggle-wrapper.pending-mode .toggle-switch {
-    background-color: #d93025; /* Red accent for Pending */
+    background-color: #d93025; 
 }
 
 .toggle-wrapper.pending-mode .toggle-knob {
@@ -428,34 +427,34 @@
 }
 
 .toggle-wrapper.verified-mode .toggle-switch {
-    background-color: #28a745; /* Green accent for Verified */
+    background-color: #28a745; 
 }
 
 .toggle-wrapper.verified-mode .toggle-knob {
     background-color: #fff;
 }
-/* Add this new class */
+
 .table-scroll-wrapper {
     width: 100%;
-    overflow-x: auto; /* The scrolling happens HERE now */
+    overflow-x: auto; 
     -webkit-overflow-scrolling: touch;
     margin-top: 10px;
 }
 
-/* 1. FORCE TABLES TO SCROLL INSIDE THE BOX */
+
 .lb-view {
     display: none;
     width: 100%;
-    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    -webkit-overflow-scrolling: touch; 
 }
 
 .lb-view.active-view {
-    display: block; /* Keep your existing animation logic if you have it */
+    display: block; 
 }
 
-/* Optional: Make the table font smaller on mobile to help it fit */
+
 .lb-view table {
-    min-width: 500px; /* Ensures table doesn't squish too much, forces scroll instead */
+    min-width: 500px; 
     font-size: 0.9em;
 }
 
@@ -467,58 +466,53 @@
 }
 @media (max-width: 400px) {
     .cf-turnstile {
-        transform: scale(0.85); /* Shrink to 85% size */
-        transform-origin: center; /* Scale from the middle */
-        margin: 0 auto; /* Keep it centered */
-        max-width: 300px; /* Ensure container doesn't block clicks */
+        transform: scale(0.85); 
+        transform-origin: center; 
+        margin: 0 auto; 
+        max-width: 300px; 
     }
 }
-/* MOBILE TOOLTIP FIX: 
-   On small screens, make the tooltip appear as a centered popup 
-   instead of floating near the icon.
-*/
+
 @media (max-width: 768px) {
     .tooltip-content {
-        /* Fixed position relative to the screen window */
+        
         position: fixed;
         top: 50%;
         left: 50%;
         bottom: auto;
         
-        /* 1. FORCE CENTERING:
-           We use !important to prevent the desktop hover animation 
-           from breaking the alignment when you click it. */
+        
         transform: translate(-50%, -50%) !important;
         
-        /* 2. SIZING: */
+        
         margin-left: 0;
-        width: 85vw; /* 85% of screen width */
+        width: 85vw; 
         max-width: 320px;
         
-        /* 3. VISUALS: */
+        
         z-index: 99999;
         background-color: #222;
-        /* This creates the dark overlay behind the popup */
+        
         box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7); 
         border: 1px solid #555;
     }
 
-    /* Hide the little arrow triangle on mobile */
+    
     .tooltip-content::after {
         display: none;
     }
 }
-/* Unified Slider Style */
+
 .renderer-toggle-container, .lb-toggle-container {
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 15px;
-    margin-bottom: 15px; /* Added spacing */
+    margin-bottom: 15px; 
     font-weight: bold;
 }
 
-/* The Switch Background */
+
 .switch {
   position: relative;
   display: inline-block;
@@ -527,18 +521,18 @@
 }
 .switch input { opacity: 0; width: 0; height: 0; }
 
-/* The Slider Track */
+
 .slider {
   position: absolute;
   cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: #333; /* Neutral Dark */
+  background-color: #333; 
   transition: .4s;
   border-radius: 34px;
   border: 1px solid #555;
 }
 
-/* The Knob */
+
 .slider:before {
   position: absolute;
   content: "";
@@ -550,24 +544,24 @@
   border-radius: 50%;
 }
 
-/* Sliding Animation */
+
 input:checked + .slider:before { transform: translateX(30px); }
 
-/* Text Labels */
+
 .renderer-label, .lb-label { 
     font-size: 1.1em; 
     color: #666; 
     transition: color 0.3s; 
 }
 
-/* Active State = GREEN for BOTH sides */
+
 .renderer-label.active, .lb-label.active { 
-    color: #28a745; /* Green */
+    color: #28a745;
     text-shadow: 0 0 10px rgba(40, 167, 69, 0.4); 
 }
-/* Inactive State = RED for Real Time Toggle */
+
 .renderer-label.inactive-red { 
-    color: #d93025; /* Red */
+    color: #d93025; 
     text-shadow: 0 0 10px rgba(217, 48, 37, 0.4); 
 }
     </style>
@@ -590,9 +584,9 @@ input:checked + .slider:before { transform: translateX(30px); }
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
                         <!-- <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option> -->
-                        <option value="simple_ex" selected>Staircase (Extreme 1080p Optimized, WASM)</option> 
-						<option value="simple_hq">Staircase (High 1080p, WASM)</option> 
-						<option value="simple">Staircase (Low 900p, WASM)</option>
+                        <option value="simple_ex" selected>Staircase (Extreme 1080p Optimized, CPU & GPU)</option> 
+						<option value="simple_hq">Staircase (High 1080p, CPU & GPU)</option> 
+						<option value="simple">Staircase (Low 900p, CPU & GPU)</option>
                         <!-- <option value="v3">Spheres v3 (slow, realistic, WASM)</option> -->
                         <!-- <option value="javascript">Spheres JS (inefficient, JavaScript)</option> -->
 						
