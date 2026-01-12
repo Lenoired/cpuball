@@ -9,6 +9,7 @@
 	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <title>CPUBALL</title>
     <style>
+	
 *, *::before, *::after {
     box-sizing: border-box;
 }
@@ -131,8 +132,7 @@
         .inline-group label { margin-bottom: 0; }
         .inline-group input[type="checkbox"] { width: auto; }
 
-        #custom-samples-group { display: none; margin-top: 10px;}
-        #customSamplesInput { width: 100px; }
+        
         .thread-info-text { color: #888; font-size: 0.8em; margin-bottom: 4px; }
 
         .button-group {
@@ -168,7 +168,7 @@
     backdrop-filter: blur(10px); 
     padding: 2rem;
     border-radius: 16px;
-    display: block; 
+    display: block;
     width: 100%;
     max-width: 400px; 
     margin-left: auto;
@@ -184,7 +184,7 @@
 }
 
 #multiThreadTime {
-    
+   
     background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
     -webkit-background-clip: text;
     background-clip: text; 
@@ -205,9 +205,7 @@
         #results p { margin: 0.5rem 0; font-size: 1.2em; text-align: left; color: #fff; }
         #results strong { display: inline-block; width: 200px; }
 
-        #reset-container { margin-top: 1.5rem; }
-        #resetButton { background-color: #007bff; color: white; font-size: 1em; padding: 10px 20px; }
-        #resetButton:hover { background-color: #0069d9; }
+        
 
         #progressBar { width: 100%; height: 28px; background-color: #333; border-radius: 14px; margin-top: 1.5rem; overflow: hidden; display: none; position: relative; }
         #progressFill { width: 0%; height: 100%; background-color: var(--accent-color); transition: width 0.1s linear; }
@@ -217,10 +215,10 @@
 
         @media (max-width: 768px) {
     body {
-        
+     
         display: block; 
         padding: 0;
-        background-color: var(--surface-color); 
+        background-color: var(--surface-color);
     }
 
     #container {
@@ -228,13 +226,13 @@
         max-width: 100%;
         margin: 0;
         border-radius: 0;
-        
+       
         padding: 10px; 
         box-shadow: none;
         overflow-x: hidden; 
     }
 
-    
+   
     .user-config-box {
         width: 100% !important;
         min-width: 0 !important;
@@ -244,7 +242,7 @@
         box-sizing: border-box;
     }
 
-    
+  
     canvas {
         max-width: 100%;
         height: auto;
@@ -318,18 +316,34 @@
     font-weight: normal;
     line-height: 1.4;
     
+   
+    white-space: normal;       
+    overflow-wrap: break-word;
+    word-break: break-word;    
     
+   
     position: absolute;
-    bottom: 135%; 
+    bottom: 135%;
     left: 50%;
-    margin-left: -130px; 
+    margin-left: -130px;
     
-    
+   
     opacity: 0;
     transition: opacity 0.3s, transform 0.3s;
     transform: translateY(10px);
     z-index: 100;
     pointer-events: none; 
+}
+#mobile-tooltip-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.6); 
+    z-index: 99998; 
+    display: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 
@@ -350,6 +364,13 @@
     visibility: visible;
     opacity: 1;
     transform: translateY(0);
+}
+
+.info-icon.active .tooltip-content {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto; 
 }
 .control-group:has(#noiseThresholdInput:disabled) {
     opacity: 0.5;
@@ -418,7 +439,7 @@
 
 
 .toggle-wrapper.pending-mode .toggle-switch {
-    background-color: #d93025; 
+    background-color: #d93025;
 }
 
 .toggle-wrapper.pending-mode .toggle-knob {
@@ -427,18 +448,25 @@
 }
 
 .toggle-wrapper.verified-mode .toggle-switch {
-    background-color: #28a745; 
+    background-color: #28a745;
 }
 
 .toggle-wrapper.verified-mode .toggle-knob {
     background-color: #fff;
 }
-
 .table-scroll-wrapper {
     width: 100%;
     overflow-x: auto; 
     -webkit-overflow-scrolling: touch;
     margin-top: 10px;
+   
+}
+
+
+@media (min-width: 768px) {
+    .table-scroll-wrapper {
+        overflow: visible; 
+    }
 }
 
 
@@ -466,7 +494,7 @@
 }
 @media (max-width: 400px) {
     .cf-turnstile {
-        transform: scale(0.85); 
+        transform: scale(0.85);
         transform-origin: center; 
         margin: 0 auto; 
         max-width: 300px; 
@@ -474,33 +502,64 @@
 }
 
 @media (max-width: 768px) {
+   
     .tooltip-content {
+        position: fixed !important; 
         
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        bottom: auto;
-        
-        
+    
+        top: 50% !important;
+        left: 50% !important;
         transform: translate(-50%, -50%) !important;
+        bottom: auto !important;
+        margin-left: 0 !important; 
+        
+       
+        width: 85vw !important;
+        max-width: 320px !important;
         
         
-        margin-left: 0;
-        width: 85vw; 
-        max-width: 320px;
+        z-index: 99999 !important;
         
-        
-        z-index: 99999;
-        background-color: #222;
-        
-        box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7); 
-        border: 1px solid #555;
+      
+        background-color: #222 !important;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.8) !important;
     }
 
-    
+ 
     .tooltip-content::after {
-        display: none;
+        display: none !important;
     }
+    
+  
+    .info-icon:hover .tooltip-content,
+    .info-icon:focus .tooltip-content {
+        visibility: hidden;
+        opacity: 0;
+    }
+    
+    
+    .info-icon.active .tooltip-content {
+        visibility: visible;
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+.toggle-wrapper.cpu-mode .toggle-switch {
+    background-color: #28a745; 
+}
+.toggle-wrapper.cpu-mode .toggle-knob {
+    transform: translateX(3px);
+    background-color: #fff;
+}
+
+
+.toggle-wrapper.gpu-mode .toggle-switch {
+    background-color: #7952b3; 
+}
+.toggle-wrapper.gpu-mode .toggle-knob {
+    transform: translateX(24px); 
+    background-color: #fff;
 }
 
 .renderer-toggle-container, .lb-toggle-container {
@@ -556,7 +615,7 @@ input:checked + .slider:before { transform: translateX(30px); }
 
 
 .renderer-label.active, .lb-label.active { 
-    color: #28a745;
+    color: #28a745; 
     text-shadow: 0 0 10px rgba(40, 167, 69, 0.4); 
 }
 
@@ -584,9 +643,9 @@ input:checked + .slider:before { transform: translateX(30px); }
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
                         <!-- <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option> -->
-                        <option value="simple_ex" selected>Staircase (Extreme 1080p Optimized, CPU & GPU)</option> 
-						<option value="simple_hq">Staircase (High 1080p, CPU & GPU)</option> 
-						<option value="simple">Staircase (Low 900p, CPU & GPU)</option>
+                        <option value="simple_ex" selected>Staircase (Extreme 1080p Optimized, WASM)</option> 
+						<option value="simple_hq">Staircase (High 1080p, WASM)</option> 
+						<option value="simple">Staircase (Low 900p, WASM)</option>
                         <!-- <option value="v3">Spheres v3 (slow, realistic, WASM)</option> -->
                         <!-- <option value="javascript">Spheres JS (inefficient, JavaScript)</option> -->
 						
@@ -622,26 +681,6 @@ input:checked + .slider:before { transform: translateX(30px); }
            
                 <div class="user-config-box" style="flex: 1; max-width: 500px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #2a2a2a; border-radius: 12px; padding: 20px; border: 1px solid #444; margin-top: 1.2rem;">
                     <h3 style="margin-top: 0; color: #fff;">User Configuration</h3>
-          
-                   
-<div id="realtimeContainer" class="renderer-toggle-container" style="margin-bottom: 20px; opacity: 0.5; pointer-events: none;">
-                       
-                        <span id="realtimeLabel" class="renderer-label inactive-red">Real Time</span>
-                        <label class="switch">
-                            <input type="checkbox" id="realtimeToggle">
-                            <span class="slider"></span>
-                        </label>
-                        
-                        <div class="info-icon" tabindex="0" style="margin-left: 10px; width: 18px; height: 18px; font-size: 12px; border-color: #666; color: #aaa;">
-                            ?
-                            <div class="tooltip-content">
-                                <strong style="color: #d93025;">Performance Warning</strong><br><br>
-                                By default, the render is <strong>hidden</strong> until finished to maximize speed.<br><br>
-                                Enable this to see the image converge in real-time (updates every 5 frames).<br><br>
-                                <strong>This will hinder render performance by a huge margin.</strong>
-                            </div>
-                        </div>
-                    </div>
 
                    
                     <div class="renderer-toggle-container" style="margin-bottom: 20px;">
@@ -666,6 +705,8 @@ input:checked + .slider:before { transform: translateX(30px); }
                     <label for="usernameInput" style="margin-bottom: 8px; color: #ccc;">Username (Required):</label>
                     <input type="text" id="usernameInput" placeholder="Enter name (max 20 chars)" maxlength="20" style="text-align: center; font-weight: bold; width: 80%; margin-bottom: 15px;">
                  
+<label for="descriptionInput" style="margin-bottom: 8px; color: #ccc;">Entry Description (optional):</label>
+<input type="text" id="descriptionInput" placeholder="e.g. RTX 4090 OC (max 100 chars)" maxlength="100" style="text-align: center; font-weight: bold; width: 80%; margin-bottom: 15px;">
         <div style="margin-top: 10px; display: flex; justify-content: center;">
             <div class="cf-turnstile" data-sitekey="0x4AAAAAACI12ODIopZw2_DX" data-theme="dark"></div>
         </div>
@@ -680,6 +721,25 @@ input:checked + .slider:before { transform: translateX(30px); }
             </fieldset>
         </div>
 
+<div style="text-align: center; margin-top: 15px; margin-bottom: 15px;">
+    <button id="toggleHistoryBtn" class="benchmark-button" style="background-color: #444; font-size: 0.9em; padding: 10px 20px; min-width: 220px;">View Submission History</button>
+</div>
+
+
+<div id="history-container" style="display: none; background: #222; padding: 20px; border-radius: 12px; border: 1px solid #444; margin: 0 auto 30px auto; max-width: 800px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+
+    <div style="position: relative; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; height: 30px; display: flex; align-items: center; justify-content: center;">
+        <h4 style="margin: 0; color: #fff; text-align: center;">Submission History</h4>
+        <button id="closeHistoryBtn" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); background:none; border:none; color:#888; cursor:pointer; font-size:1.5em; line-height: 1; padding: 5px;">&times;</button>
+    </div>
+    
+    <p style="font-size: 0.9em; color: #aaa; margin-bottom: 20px; text-align: center;">
+        Review your local scores. Click "Publish" to send your best run to the leaderboard.<br><br>
+        Note: Local submissions get cleared every 24 hours.
+    </p>
+    
+    <div id="historyList" style="max-height: 300px; overflow-y: auto;"></div>
+</div>
         <div class="button-group">
             <button id="startMultiButton" class="benchmark-button start-button">Start</button>
         </div>
@@ -698,18 +758,16 @@ input:checked + .slider:before { transform: translateX(30px); }
     <h3>Leaderboard <span id="leaderboardSceneName">gaussv2</span></h3>
     
     <div class="leaderboard-controls">
-        
-       
-        <div class="lb-toggle-container">
-            <span id="lblLbCPU" class="lb-label active">CPU</span>
-            <label class="switch">
-                <input type="checkbox" id="lbTypeToggle">
-                <span class="slider"></span>
-            </label>
-            <span id="lblLbGPU" class="lb-label">GPU</span>
+ 
+        <div class="toggle-wrapper cpu-mode" id="lbTypeToggleWrapper">
+            <span class="toggle-label active" id="lblLbCPU">CPU</span>
+            <div class="toggle-switch">
+                <div class="toggle-knob"></div>
+            </div>
+            <span class="toggle-label" id="lblLbGPU">GPU</span>
         </div>
 
-        
+      
         <div class="toggle-wrapper verified-mode" id="lbToggle">
             <span class="toggle-label active" id="lblVerified">Verified</span>
             <div class="toggle-switch">
@@ -782,33 +840,48 @@ input:checked + .slider:before { transform: translateX(30px); }
 		<p id="disclaimer">1. Scene initialization may take a few moments, particularly on tests with a high sample count.</p>
 		<!-- <p id="disclaimer">2. Javascript scenes are heavily dependent on the browser you're using, don't expect consistent scores across browsers.</p> -->
     </div>
+    <div id="threadWarningModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100000; align-items: center; justify-content: center;">
+    <div style="background: #222; border: 1px solid #d93025; padding: 25px; border-radius: 12px; max-width: 400px; text-align: center; color: #fff; box-shadow: 0 0 20px rgba(217, 48, 37, 0.4);">
+        <h3 style="margin-top: 0; color: #d93025;">⚠️ High Thread Count</h3>
+        <p style="color: #ccc; line-height: 1.5;">
+            You are attempting to launch <strong><span id="warnThreadCount"></span> threads</strong>.
+        </p>
+        <p style="font-size: 0.9em; color: #aaa;">
+            Browser WebAssembly sandboxes often crash with thread counts ≥ 120 due to memory limits.
+        </p>
+        <div style="margin-top: 25px; display: flex; gap: 15px; justify-content: center;">
+            <button id="threadWarnRun" style="padding: 10px 20px; border: 1px solid #444; background: transparent; color: #666; border-radius: 6px; cursor: pointer;">Run Anyway</button>
+            <button id="threadWarnCancel" style="padding: 10px 20px; border: none; background: #d93025; color: white; font-weight: bold; border-radius: 6px; cursor: pointer;">Don't Run</button>
+        </div>
+    </div>
+</div>
     <script id="gpu-worker-source" type="javascript/worker">
-    // === WEBGPU WORKER GLOBALS ===
+    
     let device, pipeline, bindGroup;
     let width, height;
     let frameCount = 0;
     let isRunning = true;
     
-    // Performance settings
+   
     let batchSize = 3; 
     let targetSamples = 10;
     let maxBounces = 8;
-    let realtime = false; // New flag
+    
     let userSeedLo = 0;
     let userSeedHi = 0;
     
-    // Data Buffers
+    
     let bufNodes, bufPrims, bufMats, bufLights, bufUniforms;
     let bufAccum, bufResult, bufReadback;
     
-    // Uncapped Loop Mechanism
+    
     const channel = new MessageChannel();
     const port = channel.port2;
 
-    // Scene Data
+    
     let bvhNodes = [], orderedPrims = [], materials = [], lightIndices = [];
 
-    // --- 1. SCENE BUILDER (Standard Logic) ---
+   
     function buildScene() {
         primitives = []; bvhNodes = []; materials = []; orderedPrims = []; lightIndices = [];
         let bvhBuildInfo = []; let originalLightPrimIndices = [];
@@ -855,8 +928,8 @@ input:checked + .slider:before { transform: translateX(30px); }
         function strongHash(v) { v^=v>>>15; v=Math.imul(v,0x469e0db1); v^=v>>>17; v=Math.imul(v,0x1b873593); v^=v>>>13; return v>>>0; }
         function getRandomColor(id) {
             let h = strongHash(userSeedLo ^ id);
-            // FAIRNESS FIX: Use HSV to lock brightness (Value) so render time is deterministic.
-            // Hue = Random, Saturation = 0.75, Value = 0.80
+            
+           
             let hue = (h & 0xFFFFFF) / 16777216.0;
             let s = 0.75, v = 0.80; 
             
@@ -957,7 +1030,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         lightIndices = originalLightPrimIndices.map(origIdx => originalToOrdered[origIdx]);
     }
 
-    // --- 2. WGSL SHADER (Consolidated Fixes: Parens, Type Checks, Buffer Sizes) ---
+    
     const wgslSource = `
     struct Uniforms {
         res: vec2f,
@@ -1013,7 +1086,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         let pixel_index = vec2u(y * w + x, 0u);
         let p1 = add64(pixel_index, vec2u(1u, 0u));
         pcg_state.state = vec2u(p1.x ^ seed_mix.x, p1.y ^ seed_mix.y);
-        // FIX: Parentheses for Firefox Strictness
+       
         let p2_raw = vec2u(pixel_index.x << 1u, (pixel_index.y << 1u) | (pixel_index.x >> 31u));
         let p2 = add64(p2_raw, vec2u(1u, 0u));
         pcg_state.inc = vec2u(p2.x ^ seed_mix.x, p2.y ^ seed_mix.y);
@@ -1028,7 +1101,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         let xor_lo = xs_lo ^ oldstate.x; let xor_hi = xs_hi ^ oldstate.y;
         let rot_base = (xor_lo >> 27u) | (xor_hi << 5u);
         let rot = oldstate.y >> 27u;
-        // FIX: Unary negation on u32
+     
         return (rot_base >> rot) | (rot_base << ((0u - rot) & 31u));
     }
     fn rand() -> f32 { return f32(pcg32_random()) / 4294967296.0; }
@@ -1088,7 +1161,7 @@ input:checked + .slider:before { transform: translateX(30px); }
 
     fn traverse(r: Ray, best: ptr<function, Hit>) -> bool {
         var hit = false; (*best).t = MAX_FLOAT; (*best).idx = -1;
-        // FIX: Renamed 'ptr' to 'stackPtr'
+        
         var stack: array<i32, 32>; var stackPtr = 0; var nodeIdx = 0;
         for(var k=0; k<128; k++) {
             let n = getNode(nodeIdx);
@@ -1118,7 +1191,7 @@ input:checked + .slider:before { transform: translateX(30px); }
     }
     
     fn getVisibility(r: Ray, tMax: f32) -> vec3f {
-        // FIX: Renamed 'ptr' to 'stackPtr'
+       
         var trans = vec3f(1.0); var stack: array<i32, 32>; var stackPtr = 0; var nodeIdx = 0;
         for(var k=0; k<64; k++) {
             let n = getNode(nodeIdx);
@@ -1178,7 +1251,7 @@ input:checked + .slider:before { transform: translateX(30px); }
 
     @compute @workgroup_size(64, 1, 1)
     fn main(@builtin(global_invocation_id) id: vec3u) {
-        // FLATTENED: 1D Indexing removes driver-specific 2D tiling logic
+     
         let idx = id.x;
         if (idx >= u32(u.res.x) * u32(u.res.y)) { return; }
         
@@ -1187,7 +1260,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         
         reset_prng(screen_x, screen_y, u32(u.res.x));
         
-        //let idx = id.y * u32(u.res.x) + id.x;
+      
         var acc = vec3f(0.0);
         
         if (idx % 1009u == 0u) {
@@ -1199,9 +1272,9 @@ input:checked + .slider:before { transform: translateX(30px); }
             pcg_state.state.y ^= (u.frame * 9277u);
             
             let jit = vec2f(rand(), rand()) - 0.5;
-            // FIX: Use calculated screen coordinates for 1D dispatch
+        
             let uv = (vec2f(f32(screen_x), f32(screen_y)) + jit) / u.res;
-            // FIX: Flip Y for correct camera
+          
             let focusTarget = u.camBL + u.camH * uv.x + u.camV * (1.0 - uv.y);
             let dir = normalize(focusTarget - u.camPos);
             let focus = u.camPos + dir * u.focalDist;
@@ -1224,7 +1297,7 @@ input:checked + .slider:before { transform: translateX(30px); }
                 var surf: Surf; surf.p = r.o + r.d * hit.t;
                 if (hit.type_ == 0) {
                      let p = getPrim(hit.idx); let c = p.f0.xyz; 
-                     // FIX: Correct index for inverse radius
+                     
                      let ir = p.f1.y;
                      surf.n = (surf.p - c) * ir; surf.mat = i32(p.f1.x);
                 } else {
@@ -1287,14 +1360,13 @@ input:checked + .slider:before { transform: translateX(30px); }
                 }
                 r.d = normalize(nextDir); r.invD = vec3f(1.0)/r.d;
                 if (d > 3u) {
-                    // FAIRNESS FIX: Constant probability (0.8) regardless of color/brightness.
-                    // This forces the GPU to calculate the same depth even for dark/absorbed rays.
+                   
                     let p = 0.8;
                     if (rand() > p) { break; } att *= (1.0/p);
                 }
             }
             acc = min(acc, vec3f(5.0));
-            // FIX: Manual NaN check
+          
             if (any(acc != acc) || any(acc < vec3f(0.0))) { acc = vec3f(0.0); }
         }
         
@@ -1511,38 +1583,9 @@ input:checked + .slider:before { transform: translateX(30px); }
 
             frameCount++;
         }
+        
 
-        // REAL TIME PREVIEW (Every 5 frames, if enabled)
-        if (realtime && frameCount % 5 === 0) {
-            // Copy current result to readback buffer
-            const cmd = device.createCommandEncoder();
-            cmd.copyBufferToBuffer(bufResult, 0, bufReadback, 0, width * height * 16);
-            device.queue.submit([cmd.finish()]);
-
-            // Map and read
-            await bufReadback.mapAsync(GPUMapMode.READ);
-            const raw = new Float32Array(bufReadback.getMappedRange());
-            const preview = new Uint8ClampedArray(width * height * 4);
-            
-            // Simple conversion (Float to Byte)
-            for (let i = 0; i < raw.length; i++) {
-                preview[i] = Math.max(0, Math.min(255, raw[i] * 255.0));
-            }
-            
-            bufReadback.unmap();
-            
-            // Send to main thread
-            self.postMessage({ status: "preview", imgData: preview.buffer }, [preview.buffer]);
-        }
-
-        // 3. SYNCHRONIZATION (The "Anti-Freeze" Valve) & PROGRESS
-
-        // 3. SYNCHRONIZATION (The "Anti-Freeze" Valve)
-        // Every 50 frames, we briefly await the GPU. 
-        // This keeps the Command Queue deep enough for max FPS, but shallow enough to prevent Browser Stalling.
-        // It works universally on Firefox and Chrome without capping HZ.
-        // 3. SYNCHRONIZATION (The "Anti-Freeze" Valve) & PROGRESS
-        // Check if we have advanced at least 50 frames since last sync/update
+    
         if (frameCount - lastProgressUpdate >= 60) {
             await device.queue.onSubmittedWorkDone();
             self.postMessage({ status: "progress", progress: frameCount, total: targetSamples });
@@ -1562,7 +1605,7 @@ input:checked + .slider:before { transform: translateX(30px); }
             targetSamples = e.data.samples; 
             maxBounces = e.data.bounces;
             userSeedLo = e.data.seed[0]; userSeedHi = e.data.seed[1];
-            realtime = e.data.realtime; // Store the flag
+        
             
             buildScene();
             initWebGPU().then(() => {
@@ -1577,7 +1620,29 @@ input:checked + .slider:before { transform: translateX(30px); }
     };
 </script>
     <script>
-        (function() {
+    (function() {
+        // --- OPTIMIZATION: Initialize Session ID Immediately ---
+let userSessionId = null;
+try {
+    userSessionId = localStorage.getItem('cpu_ball_session');
+} catch(e) { console.warn("LocalStorage blocked"); }
+
+if (!userSessionId) {
+    // Check if secure randomUUID is available
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        userSessionId = crypto.randomUUID();
+    } else {
+        // Fallback for HTTP / Older Browsers / Kiwi non-secure context
+        userSessionId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+    
+    try {
+        localStorage.setItem('cpu_ball_session', userSessionId);
+    } catch(e) {}
+}
             let currentRenderSettings = null; 
             const startMultiButton = document.getElementById('startMultiButton');
 			const lbToggle = document.getElementById('lbToggle');
@@ -1593,86 +1658,81 @@ const lblPending = document.getElementById('lblPending');
             const labelCPU = document.getElementById('labelCPU');
             const labelGPU = document.getElementById('labelGPU');
             const threadGroup = document.getElementById('threadInput').parentElement;
+if (lbToggle) {
+    lbToggle.addEventListener('click', () => {
+        isPendingView = !isPendingView; // Toggle state
 
-            // Real Time Toggle Logic
-            const realtimeToggle = document.getElementById('realtimeToggle');
-            const realtimeLabel = document.getElementById('realtimeLabel');
-            // Initialize disabled state for CPU default
-            realtimeToggle.disabled = true;
+        if (isPendingView) {
+            // Switch to Pending View
+            lbToggle.classList.remove('verified-mode');
+            lbToggle.classList.add('pending-mode');
+            
+            lblVerified.classList.remove('active');
+            lblPending.classList.add('active');
 
-            realtimeToggle.addEventListener('change', (e) => {
-                if (e.target.checked) {
-                    // Enabled -> Green
-                    realtimeLabel.classList.remove('inactive-red');
-                    realtimeLabel.classList.add('active');
-                } else {
-                    // Disabled -> Red
-                    realtimeLabel.classList.remove('active');
-                    realtimeLabel.classList.add('inactive-red');
-                }
-            });
+            viewVerified.classList.remove('active-view');
+            viewPending.classList.add('active-view');
+        } else {
+            // Switch to Verified View
+            lbToggle.classList.remove('pending-mode');
+            lbToggle.classList.add('verified-mode');
+
+            lblPending.classList.remove('active');
+            lblVerified.classList.add('active');
+
+            viewPending.classList.remove('active-view');
+            viewVerified.classList.add('active-view');
+        }
+    });
+}
+            
 
             rendererToggle.addEventListener('change', (e) => {
-                const rtContainer = document.getElementById('realtimeContainer');
-                const rtInput = document.getElementById('realtimeToggle');
+    if (e.target.checked) {
+        // GPU Selected
+        rendererType = 'gpu';
+        labelCPU.classList.remove('active');
+        labelGPU.classList.add('active');
+        threadGroup.style.opacity = '0.3'; 
+        document.getElementById('threadInput').disabled = true;
+    } else {
+        // CPU Selected
+        rendererType = 'cpu';
+        labelGPU.classList.remove('active');
+        labelCPU.classList.add('active');
+        threadGroup.style.opacity = '1';
+        document.getElementById('threadInput').disabled = false;
+    }
+    fetchSceneSettings();
+});
+// --- NEW LEADERBOARD TOGGLE LOGIC (Pill Style) ---
+const lbTypeWrapper = document.getElementById('lbTypeToggleWrapper');
 
-                if (e.target.checked) {
-                    // GPU Selected
-                    rendererType = 'gpu';
-                    labelCPU.classList.remove('active');
-                    labelGPU.classList.add('active');
-                    threadGroup.style.opacity = '0.3'; 
-                    document.getElementById('threadInput').disabled = true;
-                    
-                    // Enable Real Time Toggle
-                    rtContainer.style.opacity = '1';
-                    rtContainer.style.pointerEvents = 'auto';
-                    rtInput.disabled = false;
-                } else {
-                    // CPU Selected
-                    rendererType = 'cpu';
-                    labelGPU.classList.remove('active');
-                    labelCPU.classList.add('active');
-                    threadGroup.style.opacity = '1';
-                    document.getElementById('threadInput').disabled = false;
 
-                    // Disable Real Time Toggle (Grey out)
-                    rtContainer.style.opacity = '0.5';
-                    rtContainer.style.pointerEvents = 'none';
-                    rtInput.disabled = true;
-                    
-                    // Optional: Uncheck it to avoid confusion
-                    if(rtInput.checked) {
-                         rtInput.checked = false;
-                         // Trigger change event manually to update the label color to red
-                         rtInput.dispatchEvent(new Event('change'));
-                    }
-                }
-                // Refresh settings to update samples display
-                fetchSceneSettings();
-            });
-            // NEW LEADERBOARD TOGGLE LOGIC
-            const lbTypeToggle = document.getElementById('lbTypeToggle');
-            const lblLbCPU = document.getElementById('lblLbCPU');
-            const lblLbGPU = document.getElementById('lblLbGPU');
-
-            lbTypeToggle.addEventListener('change', (e) => {
-                if (e.target.checked) {
-                    leaderboardFilter = 'gpu';
-                    lblLbCPU.classList.remove('active');
-                    lblLbGPU.classList.add('active');
-                } else {
-                    leaderboardFilter = 'cpu';
-                    lblLbGPU.classList.remove('active');
-                    lblLbCPU.classList.add('active');
-                }
-                fetchLeaderboard();
-            });
+lbTypeWrapper.addEventListener('click', () => {
+    // Toggle based on current class
+    if (lbTypeWrapper.classList.contains('cpu-mode')) {
+        // Switch to GPU
+        lbTypeWrapper.classList.remove('cpu-mode');
+        lbTypeWrapper.classList.add('gpu-mode');
+        lblLbCPU.classList.remove('active');
+        lblLbGPU.classList.add('active');
+        leaderboardFilter = 'gpu';
+    } else {
+        // Switch to CPU
+        lbTypeWrapper.classList.remove('gpu-mode');
+        lbTypeWrapper.classList.add('cpu-mode');
+        lblLbGPU.classList.remove('active');
+        lblLbCPU.classList.add('active');
+        leaderboardFilter = 'cpu';
+    }
+    fetchLeaderboard();
+});
+            
 let isPendingView = false;
             const threadInput = document.getElementById('threadInput');
             const canvas = document.getElementById('renderCanvas');
             const ctx = canvas.getContext('2d');
-            const singleThreadTimeEl = document.getElementById('singleThreadTime');
             const multiThreadTimeEl = document.getElementById('multiThreadTime');
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
@@ -1744,38 +1804,12 @@ window.addEventListener('resize', scaleResultText);
                 return [(h1 >>> 0), (h2 >>> 0)];
             }
 
-            function generateRandomString(length) {
-                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-                let result = '';
-                for ( let i = 0; i < length; i++ ) {
-                    result += chars.charAt(Math.floor(Math.random() * chars.length));
-                }
-                return result;
-            }
+            
 
             function cryptoHash(pixelData) {
                 return Promise.resolve(sha256(pixelData));
             }
 
-       
-            async function getFreshTurnstileToken(msgElement) {
-                let token = turnstile.getResponse();
-                if (token) return token;
-
-              
-                msgElement.textContent = "Please solve the CAPTCHA to proceed...";
-                msgElement.style.color = "#ff9800";
-                
-                return new Promise((resolve) => {
-                    const checkInterval = setInterval(() => {
-                        token = turnstile.getResponse();
-                        if (token) {
-                            clearInterval(checkInterval);
-                            resolve(token);
-                        }
-                    }, 500);
-                });
-            }
 
             async function prepareWasm(benchmarkName) {
                 if (benchmarkName === 'javascript' || wasmBinaries[benchmarkName]) return;
@@ -2128,6 +2162,8 @@ window.addEventListener('resize', scaleResultText);
                         'X-Token': currentToken,
                         'X-Hash': hash,
                         'X-Username': username,
+                        'X-Description': document.getElementById('descriptionInput').value.trim() || "",
+                        'X-User-Session': userSessionId,
                         'X-Threads': String(parseInt(threadInput.value, 10) || 1), 
                         'X-Renderer': rendererType || 'cpu'
                     };
@@ -2151,42 +2187,40 @@ window.addEventListener('resize', scaleResultText);
                     }
                     
                     if (subRes.ok) {
-                        statusDiv.textContent = `Submitted to Pending List! Time: ${(subJson.server_score / 1000).toFixed(3)}s`;
-                        statusDiv.style.color = "#ff9800"; 
+    // 1. Update Status Text
+    statusDiv.textContent = `Saved to History! Score: ${(subJson.server_score / 1000).toFixed(3)}s`;
+    statusDiv.style.color = "#28a745"; 
+const isGpuRun = (rendererType === 'gpu');
+   // Update the toggle UI visually to match the run
+   if (isGpuRun) {
+       lbTypeWrapper.classList.remove('cpu-mode');
+       lbTypeWrapper.classList.add('gpu-mode');
+       lblLbCPU.classList.remove('active');
+       lblLbGPU.classList.add('active');
+       leaderboardFilter = 'gpu';
+   } else {
+       lbTypeWrapper.classList.remove('gpu-mode');
+       lbTypeWrapper.classList.add('cpu-mode');
+       lblLbGPU.classList.remove('active');
+       lblLbCPU.classList.add('active');
+       leaderboardFilter = 'cpu';
+   }
+   
+    targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s`;
+    targetTimeEl.style.cssText = ''; 
+    if (targetTimeEl.parentElement) targetTimeEl.parentElement.style.cssText = '';
+    scaleResultText();
 
-                        targetTimeEl.textContent = `${(subJson.server_score / 1000).toFixed(3)}s`;
-                        targetTimeEl.style.cssText = ''; 
-                        if (targetTimeEl.parentElement) targetTimeEl.parentElement.style.cssText = '';
 
-                        if (!isPendingView) {
-                            isPendingView = true;
-                            lbToggle.classList.remove('verified-mode');
-                            lbToggle.classList.add('pending-mode');
-                            lblVerified.classList.remove('active');
-                            lblPending.classList.add('active');
-                            viewVerified.classList.remove('active-view');
-                            viewPending.classList.add('active-view');
-                        }
+    fetchHistory();
+    
+    const histContainer = document.getElementById('history-container');
+    histContainer.style.display = 'block';
+    document.getElementById('toggleHistoryBtn').textContent = "Close Submission History";
 
-                        document.getElementById('leaderboard-section').scrollIntoView({ behavior: 'smooth' });
-
-                        scaleResultText();
-                        fetchLeaderboard();
-                        
-                        const isGpuRun = (rendererType === 'gpu');
-                        if (lbTypeToggle.checked !== isGpuRun) {
-                            lbTypeToggle.checked = isGpuRun;
-                            lbTypeToggle.dispatchEvent(new Event('change'));
-                        }
-
-                        setTimeout(() => {
-                            document.getElementById('leaderboard-section').scrollIntoView({ 
-                                behavior: 'smooth', 
-                                block: 'start' 
-                            });
-                        }, 100);
-                    
-                    } else {
+    
+    histContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+} else {
                         if (subJson.error === "CAPTCHA_FAILED") {
                             turnstile.reset();
                             statusDiv.textContent = "Submit CAPTCHA failed. Please try running again.";
@@ -2215,7 +2249,7 @@ window.addEventListener('resize', scaleResultText);
             
 
             async function fetchSceneSettings() {
-                // Trigger LB update visual only
+             
                 fetchLeaderboard();
                 
                 const scene = sceneSelector.value;
@@ -2224,13 +2258,13 @@ window.addEventListener('resize', scaleResultText);
                 document.getElementById('startMultiButton').disabled = true;
                 
                 try {
-                    // PASS rendererType to the API
+                  
                     const res = await fetch(`${backendUrl}/api/settings?scene=${scene}&renderer=${rendererType}`);
                     if (!res.ok) throw new Error("Failed to load settings");
                     
                     currentRenderSettings = await res.json();
                     
-                    // Note: No client-side multiplication needed anymore.
+                    
                     
                     display.innerHTML = `Target: ${currentRenderSettings.resolution} | Samples: ${currentRenderSettings.samples}<br>Ray Bounces: ${currentRenderSettings.maxDepth} | Tile Size: ${currentRenderSettings.tileSize}px`;
                     
@@ -2256,16 +2290,16 @@ window.addEventListener('resize', scaleResultText);
                 const verifiedBody = document.getElementById('leaderboardBody');
                 const pendingBody = document.getElementById('pendingBody');
 
-                // Set loading state
+            
                 verifiedBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
                 pendingBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading...</td></tr>';
 
                 try {
-                    // 1. Fetch ALL data (Pending + Verified) in one request
+                   
                     const res = await fetch(`${backendUrl}/api/leaderboard?scene=${sceneId}`);
                     const data = await res.json();
                     
-                    // Clear loading state
+                   
                     verifiedBody.innerHTML = '';
                     pendingBody.innerHTML = '';
 
@@ -2276,19 +2310,18 @@ window.addEventListener('resize', scaleResultText);
                          return;
                     }
 
-                    // 2. Client-side Split & Filter
-                    // Only show rows that match the selected filter (cpu/gpu)
+                   
                     const filteredData = data.filter(r => (r.renderer_type || 'cpu') === leaderboardFilter);
                     const verifiedEntries = filteredData.filter(r => r.status === 'verified');
                     const pendingEntries = filteredData.filter(r => r.status === 'pending');
 
-                    // 3. Helper to render rows
+                  
                     const renderRows = (entries, tbody) => {
                         if (entries.length === 0) {
                             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No entries.</td></tr>';
                             return;
                         }
-                        // Sort by score (asc) just to be safe, though DB does it too
+                        
                         entries.sort((a,b) => a.score_ms - b.score_ms);
 
                         entries.forEach((row, index) => {
@@ -2306,11 +2339,50 @@ window.addEventListener('resize', scaleResultText);
                             userTd.style.fontWeight = "bold"; 
                             userTd.style.color = "#fff"; 
                             userTd.textContent = row.username; 
+
+if (row.description) {
+    const descBadge = document.createElement('div');
+    descBadge.className = 'info-icon';
+    descBadge.style.cssText = 'margin-left: 8px; width: 18px; height: 18px; font-size: 11px; vertical-align: middle; border-color: #666; color: #aaa; display: inline-flex;';
+    descBadge.innerText = "?";
+    descBadge.tabIndex = 0; 
+
+    
+    descBadge.addEventListener('click', (e) => {
+       
+        if (window.innerWidth <= 768) {
+            e.stopPropagation();
+            
+            
+            const isActive = descBadge.classList.contains('active');
+            
+          
+            document.querySelectorAll('.info-icon.active').forEach(el => el.classList.remove('active'));
+            document.getElementById('mobile-tooltip-overlay').style.display = 'none';
+
+            if (!isActive) {
+                
+                descBadge.classList.add('active');
+                document.getElementById('mobile-tooltip-overlay').style.display = 'block';
+            }
+        }
+    });
+    
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'tooltip-content';
+  
+    tooltip.innerText = row.description; 
+    
+    descBadge.appendChild(tooltip);
+    userTd.appendChild(descBadge);
+}
                             
                             const threadTd = document.createElement('td'); 
                             threadTd.style.padding = "8px"; 
                             threadTd.style.textAlign = "center"; 
                             threadTd.style.color = "#aaa";
+                
                             threadTd.textContent = (row.threads > 0) ? row.threads : "-";
                             
                             const timeTd = document.createElement('td'); 
@@ -2331,7 +2403,7 @@ window.addEventListener('resize', scaleResultText);
                         });
                     };
 
-                    // 4. Populate Tables
+                  
                     renderRows(verifiedEntries, verifiedBody);
                     renderRows(pendingEntries, pendingBody);
 
@@ -2346,20 +2418,48 @@ window.addEventListener('resize', scaleResultText);
             document.getElementById('refreshLeaderboard').addEventListener('click', fetchLeaderboard);
             fetchLeaderboard();
 
-            document.getElementById('startMultiButton').addEventListener('click', () => {
-                // If GPU is selected, thread input is disabled/irrelevant, 
-                // but startBenchmark handles that internally based on rendererType.
-                let numThreads = parseInt(threadInput.value, 10);
-                
-                // Fallback for safety
-                if (isNaN(numThreads) || numThreads <= 0) {
-                    numThreads = navigator.hardwareConcurrency || 4;
-                    threadInput.value = numThreads;
-                }
-                
-                // Triggers the branching logic in startBenchmark
-                startBenchmark(numThreads, multiThreadTimeEl);
-            });
+            
+const warnModal = document.getElementById('threadWarningModal');
+const warnRunBtn = document.getElementById('threadWarnRun');
+const warnCancelBtn = document.getElementById('threadWarnCancel');
+
+
+function triggerBenchmark(numThreads) {
+    
+    startBenchmark(numThreads, multiThreadTimeEl);
+}
+
+
+document.getElementById('startMultiButton').addEventListener('click', () => {
+    let numThreads = parseInt(threadInput.value, 10);
+    
+    
+    if (isNaN(numThreads) || numThreads <= 0) {
+        numThreads = navigator.hardwareConcurrency || 4;
+        threadInput.value = numThreads;
+    }
+
+  
+    if (rendererType === 'cpu' && numThreads >= 120) {
+        document.getElementById('warnThreadCount').textContent = numThreads;
+        warnModal.style.display = 'flex';
+      
+        warnCancelBtn.focus(); 
+        
+        
+        warnCancelBtn.onclick = () => {
+            warnModal.style.display = 'none';
+        };
+        
+        warnRunBtn.onclick = () => {
+            warnModal.style.display = 'none';
+            triggerBenchmark(numThreads);
+        };
+        return;
+    }
+
+    triggerBenchmark(numThreads);
+});
 			
 			
             document.getElementById('verifyPendingButton').addEventListener('click', async () => {
@@ -2404,7 +2504,7 @@ window.addEventListener('resize', scaleResultText);
                         log(`\nVerifying ID ${entry.id} (${entry.username}) [${isGpu ? "GPU" : "CPU"}]...`);
                         log(`Scene: ${entry.scene} | Seed (Raw): ${entry.seed}`);
 
-                        // Fetch the EXACT settings used for this entry type (CPU or GPU)
+                       
                         const settingsRes = await fetch(`${backendUrl}/api/settings?scene=${entry.scene}&renderer=${entry.renderer_type || 'cpu'}`);
                         const settings = await settingsRes.json();
                         
@@ -2443,7 +2543,7 @@ window.addEventListener('resize', scaleResultText);
                             } else {
                                 log("❌ MISMATCH! Rejecting...");
                             }
-                        // --- REPLACEMENT START: GPU Verification Logic ---
+                      
                         } else {
                             if (!entry.debug_data) {
                                 log("❌ GPU Entry missing debug data!");
@@ -2451,8 +2551,7 @@ window.addEventListener('resize', scaleResultText);
                             } else {
                                 log("Downloading Fingerprint & Running Local GPU Render...");
                                 
-                                // 1. Decode Client Fingerprint (JSON)
-                                // 1. Decode Client Fingerprint (Binary)
+                               
                                 let clientCanaries = [];
                                 let clientBlocks = [];
                                 try {
@@ -2464,7 +2563,7 @@ window.addEventListener('resize', scaleResultText);
                                     const view = new DataView(bytes.buffer);
                                     let offset = 0;
 
-                                    // Read Canaries
+                                  
                                     const numCanaries = view.getUint32(offset, true); offset += 4;
                                     for(let k=0; k<numCanaries; k++) {
                                         const idx = view.getUint32(offset, true); offset += 4;
@@ -2474,7 +2573,7 @@ window.addEventListener('resize', scaleResultText);
                                         clientCanaries.push([idx, r, g, b]);
                                     }
 
-                                    // Read Blocks
+                                    
                                     const numBlocks = view.getUint32(offset, true); offset += 4;
                                     for(let k=0; k<numBlocks; k++) {
                                         const r = view.getFloat32(offset, true); offset += 4;
@@ -2495,24 +2594,20 @@ window.addEventListener('resize', scaleResultText);
                                     continue;
                                 }
 
-                                // 2. Run Admin GPU Render (Full Resolution)
-                          
-                                // We render the FULL image locally to generate our own ground truth
+                                
                                 const adminResult = await runGpuBenchmark(settings, seedLo, seedHi, { textContent: "" });
                                 const adminBuffer = new Float32Array(adminResult.buffer);
 
-                                // 3. Compare Client Fingerprint vs Admin Ground Truth
+                               
                                 let canaryFail = 0;
                                 let blockDiffSum = 0;
                                 let blockCount = 0;
                                 
-                                // A. Verify Canaries
-                                //const clientCanaries = clientFingerprint.c || [];
+                               
                                 for (let c of clientCanaries) {
                                     let idx = c[0];
                                     let clientR = c[1];
-                                    // Get Admin's value at this exact pixel
-                                    // Since admin rendered locally with same seed, it should match EXACTLY (or very close)
+                                   
                                     let adminR = adminBuffer[idx*4];
                                     
                                     if (Math.abs(clientR - adminR) > 0.1) {
@@ -2520,8 +2615,7 @@ window.addEventListener('resize', scaleResultText);
                                     }
                                 }
 
-                                // B. Verify Block Sums
-                                //const clientBlocks = clientFingerprint.b || [];
+                               
                                 const BLOCK_SIZE = 16;
                                 let bIdx = 0;
                                 
@@ -2529,7 +2623,7 @@ window.addEventListener('resize', scaleResultText);
                                     for (let bx = 0; bx < w; bx += BLOCK_SIZE) {
                                         if (bIdx >= clientBlocks.length) break;
                                         
-                                        // Calculate ADMIN Block Sum
+                                       
                                         let adminSumR = 0, adminSumG = 0, adminSumB = 0;
                                         
                                         for (let y = 0; y < BLOCK_SIZE; y++) {
@@ -2537,7 +2631,7 @@ window.addEventListener('resize', scaleResultText);
                                                 let cx = bx + x; let cy = by + y;
                                                 if (cx >= w || cy >= h) continue;
                                                 let idx = cy * w + cx;
-                                                if ((idx % 1009) === 0) continue; // Skip canary
+                                                if ((idx % 1009) === 0) continue; 
 
                                                 adminSumR += adminBuffer[idx*4];
                                                 adminSumG += adminBuffer[idx*4+1];
@@ -2545,15 +2639,15 @@ window.addEventListener('resize', scaleResultText);
                                             }
                                         }
 
-                                        // Compare with CLIENT Block Sum
+                                       
                                         let cBlock = clientBlocks[bIdx];
-                                        // cBlock = [sumR, sumG, sumB, count]
+                                       
                                         
                                         let dR = Math.abs(cBlock[0] - adminSumR);
                                         let dG = Math.abs(cBlock[1] - adminSumG);
                                         let dB = Math.abs(cBlock[2] - adminSumB);
                                         
-                                        // Normalized Difference (Relative to brightness)
+                                       
                                         let totalBright = adminSumR + adminSumG + adminSumB + 1.0;
                                         blockDiffSum += (dR + dG + dB) / totalBright;
                                         blockCount++;
@@ -2564,7 +2658,7 @@ window.addEventListener('resize', scaleResultText);
                                 let avgDiff = (blockDiffSum / Math.max(1, blockCount)) * 100;
                                 log(`Canary Mismatch: ${canaryFail} | Block Variance: ${avgDiff.toFixed(4)}%`);
                                 
-                                if (canaryFail > 0 || avgDiff > 5.0) { // Tolerance
+                                if (canaryFail > 0 || avgDiff > 5.0) { 
                                     decision = 'reject';
                                     reason = `High Variance (${avgDiff.toFixed(1)}%)`;
                                     log(`❌ REJECTING: ${reason}`);
@@ -2574,7 +2668,7 @@ window.addEventListener('resize', scaleResultText);
                                 }
                             }
                         }
-                        // --- REPLACEMENT END ---
+                      
 
                         const finRes = await fetch(`${backendUrl}/admin/finalize`, {
                             method: 'POST',
@@ -2603,30 +2697,143 @@ window.addEventListener('resize', scaleResultText);
                     isBenchmarkRunning = false;
                 }
             });
-			lbToggle.addEventListener('click', () => {
-    isPendingView = !isPendingView; 
-
-    if (isPendingView) {
-       
-        lbToggle.classList.remove('verified-mode');
-        lbToggle.classList.add('pending-mode');
+            async function fetchHistory() {
+    const listDiv = document.getElementById('historyList');
+    listDiv.innerHTML = '<div style="color:#888; text-align:center; padding:20px;">Loading...</div>';
+    
+    try {
+        const res = await fetch(`${backendUrl}/api/history`, {
+            headers: { 'X-User-Session': userSessionId }
+        });
+        const data = await res.json();
         
-        lblVerified.classList.remove('active');
-        lblPending.classList.add('active');
+        if (data.length === 0) {
+            listDiv.innerHTML = '<div style="color:#666; text-align:center; padding: 20px; font-style: italic;">No submissions found, try submitting one!</div>';
+            return;
+        }
+        
+        let html = '<table style="width:100%; border-collapse: separate; border-spacing: 0 8px;">';
+        
+        html += `
+            <thead>
+                <tr style="color:#888; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px;">
+                    <th style="text-align: center; padding: 0 10px;">Date</th>
+                    <th style="text-align: center; padding: 0 10px;">Renderer</th>
+                    <th style="text-align: center; padding: 0 10px;">Scene</th>
+                    <th style="text-align: center; padding: 0 10px;">Score</th>
+                    <th style="text-align: center; padding: 0 10px;">Action</th>
+                </tr>
+            </thead>
+            <tbody>`;
+        
+        data.forEach(row => {
+            // 1. Renderer Formatting
+            const rend = (row.renderer_type || 'cpu').toUpperCase();
+            // GPU is now RED (#d93025), CPU is Green
+            const rendColor = rend === 'GPU' ? '#d93025' : '#28a745'; 
 
-        viewVerified.classList.remove('active-view');
-        viewPending.classList.add('active-view');
+            // 2. Scene Friendly Name Lookup
+            // We use the global 'sceneDisplayNames' object defined earlier in your script
+            const friendlyScene = sceneDisplayNames[row.scene] || row.scene;
+
+            html += `
+            <tr style="background: rgba(255,255,255,0.03);">
+                <td style="padding: 12px; text-align: center; color: #ccc; border-radius: 6px 0 0 6px; font-size: 0.9em;">
+                    ${new Date(row.timestamp).toLocaleString()}
+                </td>
+                <td style="padding: 12px; text-align: center; font-weight: bold; color: ${rendColor};">
+                    ${rend}
+                </td>
+                <!-- Scaled down font for friendly name -->
+                <td style="padding: 12px; text-align: center; color: #ccc; font-size: 0.85em;">
+                    ${friendlyScene}
+                </td>
+                <td style="padding: 12px; text-align: center; color: #fff; font-weight: bold; font-family: monospace; font-size: 1.1em;">
+                    ${(row.score_ms/1000).toFixed(3)}s
+                </td>
+                <td style="padding: 12px; text-align: center; border-radius: 0 6px 6px 0;">
+                    <div style="display: flex; justify-content: center; gap: 8px;">
+                        <button onclick="handleHistoryAction('${row.id}', 'delete')" 
+                            style="background: #d93025; border:none; color:white; padding: 6px 12px; border-radius: 4px; cursor:pointer; font-weight:bold; font-size: 0.8em; transition: opacity 0.2s;" 
+                            onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                            Del
+                        </button>
+                        <button onclick="handleHistoryAction('${row.id}', 'publish')" 
+                            style="background: #28a745; border:none; color:white; padding: 6px 12px; border-radius: 4px; cursor:pointer; font-weight:bold; font-size: 0.8em; transition: opacity 0.2s;" 
+                            onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                            Publish
+                        </button>
+                    </div>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        listDiv.innerHTML = html;
+        
+    } catch(e) {
+        listDiv.innerHTML = '<div style="color:#d93025; text-align:center;">Error loading history.</div>';
+    }
+}
+
+
+window.handleHistoryAction = async function(id, action) {
+    const btn = event.target;
+    const oldText = btn.innerText;
+    btn.innerText = "...";
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch(`${backendUrl}/api/publish`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-User-Session': userSessionId 
+            },
+            body: JSON.stringify({ temp_id: id, action: action })
+        });
+        
+        const json = await res.json();
+        
+        if (res.ok) {
+            if (action === 'publish') {
+                alert(`Successfully Published! Score: ${(json.server_score/1000).toFixed(3)}s`);
+              
+                fetchLeaderboard();
+                document.getElementById('leaderboard-section').scrollIntoView({ behavior: 'smooth' });
+            }
+           
+            fetchHistory();
+        } else {
+            alert("Error: " + json.error);
+        }
+    } catch(e) {
+        console.error(e);
+        alert("Network error.");
+    }
+};
+
+const toggleBtn = document.getElementById('toggleHistoryBtn');
+const historyContainer = document.getElementById('history-container');
+
+toggleBtn.addEventListener('click', () => {
+    if (historyContainer.style.display === 'none') {
+       
+        historyContainer.style.display = 'block';
+        toggleBtn.textContent = "Close Submission History";
+        fetchHistory();
+        
+        
+        historyContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } else {
         
-        lbToggle.classList.remove('pending-mode');
-        lbToggle.classList.add('verified-mode');
-
-        lblPending.classList.remove('active');
-        lblVerified.classList.add('active');
-
-        viewPending.classList.remove('active-view');
-        viewVerified.classList.add('active-view');
+        historyContainer.style.display = 'none';
+        toggleBtn.textContent = "View Submission History";
     }
+});
+
+document.getElementById('closeHistoryBtn').addEventListener('click', () => {
+    historyContainer.style.display = 'none';
+    toggleBtn.textContent = "View Submission History";
 });
 function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                 return new Promise((resolve, reject) => {
@@ -2645,7 +2852,7 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                     const startTime = performance.now();
                     
                     worker.onmessage = (e) => {
-                        // 0. HANDLE PROGRESS
+                     
                         if (e.data.status === 'progress') {
                             const percent = (e.data.progress / e.data.total) * 100;
                             progressFill.style.width = `${percent}%`;
@@ -2653,19 +2860,6 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                             return;
                         }
 
-                        // 0.5 HANDLE PREVIEW (Real Time)
-                        if (e.data.status === 'preview') {
-                            const img = new ImageData(
-                                new Uint8ClampedArray(e.data.imgData), 
-                                renderWidth, 
-                                renderHeight
-                            );
-                            ctx.putImageData(img, 0, 0);
-                            return;
-                        }
-
-                        // 1. HANDLE CRASH
-                        
                         if (e.data.status === 'crash') {
                             worker.terminate();
                             alert("The benchmark has stopped abruptly, slow/old devices are still WIP and might often crash");
@@ -2673,7 +2867,7 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                             return;
                         }
 
-                        // 2. HANDLE SUCCESS
+                      
                         if (e.data.status === 'finished') {
                             const totalTime = (performance.now() - startTime) / 1000;
                             
@@ -2703,12 +2897,48 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                         samples: settings.samples,
                         bounces: settings.maxDepth,
                         seed: [seedLo, seedHi],
-                        realtime: document.getElementById('realtimeToggle').checked
                     });
                 });
             }
-        
-        })();
-    </script>
+
+
+// 1. Auto-create Overlay if missing
+let overlay = document.getElementById('mobile-tooltip-overlay');
+if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'mobile-tooltip-overlay';
+    document.body.appendChild(overlay);
+}
+
+// 2. Function to Close Tooltip
+function closeAllTooltips(e) {
+    // Prevent the tap from passing through to buttons behind the overlay
+    if (e) {
+        if (e.cancelable) e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    overlay.style.display = 'none';
+    
+    document.querySelectorAll('.info-icon.active').forEach(el => {
+        el.classList.remove('active');
+        // Important: Remove focus so it doesn't auto-reopen
+        el.blur(); 
+    });
+}
+
+// 3. Attach Listeners to Overlay
+overlay.addEventListener('click', closeAllTooltips);
+// "passive: false" is required to use preventDefault() on touch events
+overlay.addEventListener('touchstart', closeAllTooltips, {passive: false});
+
+// 4. Close on Escape (Desktop)
+document.addEventListener('keydown', (e) => {
+    if (e.key === "Escape") closeAllTooltips();
+});
+
+})(); 
+</script>
+
 </body>
 </html>
