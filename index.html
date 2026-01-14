@@ -643,9 +643,9 @@ input:checked + .slider:before { transform: translateX(30px); }
                     <label for="sceneSelector">Scene:</label>
                     <select id="sceneSelector">
                         <!-- <option value="gaussv2">Caustic Hell v2 (new, fast, extremely demanding, needs >256 ray bounces, WASM)</option> -->
-                        <option value="simple_ex" selected>Staircase (Extreme 1080p Optimized, WASM)</option> 
-						<option value="simple_hq">Staircase (High 1080p, WASM)</option> 
-						<option value="simple">Staircase (Low 900p, WASM)</option>
+                        <option value="simple_ex" selected>Staircase (Extreme 1080p Optimized, CPU & GPU)</option> 
+						<option value="simple_hq">Staircase (High 1080p, CPU & GPU)</option> 
+						<option value="simple">Staircase (Low 900p, CPU & GPU)</option>
                         <!-- <option value="v3">Spheres v3 (slow, realistic, WASM)</option> -->
                         <!-- <option value="javascript">Spheres JS (inefficient, JavaScript)</option> -->
 						
@@ -691,7 +691,7 @@ input:checked + .slider:before { transform: translateX(30px); }
                         </label>
                         <span id="labelGPU" class="renderer-label">GPU (WIP)</span>
                         
-                        <div class="info-icon" tabindex="0" style="margin-left: 0px; width: 18px; height: 18px; font-size: 12px; border-color: #666; color: #aaa;">
+                        <div class="info-icon" id="experimentalInfoIcon" tabindex="0" style="margin-left: 0px; width: 18px; height: 18px; font-size: 12px; border-color: #666; color: #aaa;">
                             ?
                             <div class="tooltip-content">
                                 <strong style="color: #d93025;">⚠️ Experimental Feature</strong><br><br>
@@ -807,7 +807,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         <h4 style="color: #d93025; margin: 0;">Unverified Submissions</h4>
         
        
-        <div class="info-icon" tabindex="0">
+        <div class="info-icon" id="pendingInfoIcon" tabindex="0">
             ?
             <div class="tooltip-content">
                 These scores are waiting for admin approval. 
@@ -1382,7 +1382,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         accum[idx].sum = vec4f(t, 1.0);
         accum[idx].comp = vec4f(c, 1.0);
         
-        // VISUAL FIX: Hide canary pixels in the display buffer by copying the neighbor
+        
         var visualSum = t;
         if (idx % 1009u == 0u) {
             let neighborIdx = min(idx + 1u, u32(u.res.x) * u32(u.res.y) - 1u);
@@ -1397,7 +1397,7 @@ input:checked + .slider:before { transform: translateX(30px); }
     }
     `;
 
-    // --- 3. WEBGPU INIT ---
+    
     async function initWebGPU() {
         if (!navigator.gpu) throw new Error("WebGPU not supported");
         const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
@@ -1448,7 +1448,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         if (lightIndices.length > 0) lightIndices.forEach((idx, i) => lightData[i] = idx);
         bufLights = createBuf(lightData, GPUBufferUsage.STORAGE);
 
-        // FIX: Buffer size 144
+        
         bufUniforms = device.createBuffer({ size: 144, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
         const pixelCount = width * height;
@@ -1464,7 +1464,7 @@ input:checked + .slider:before { transform: translateX(30px); }
                 { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
                 { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
                 { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
-                // FIX: Explicit read-write access
+                
                 { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
                 { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
             ]
@@ -1510,7 +1510,7 @@ input:checked + .slider:before { transform: translateX(30px); }
         let center = add(camPos, mul(fwd, focalDist));
         let llc = sub(sub(center, mul(horizontal, 0.5)), mul(vertical, 0.5));
 
-        // FIX: Buffer Size 144
+        
         const data = new ArrayBuffer(144); const f32 = new Float32Array(data); const u32 = new Uint32Array(data);
         f32[0] = width; f32[1] = height; 
         u32[2] = frameCount; u32[3] = maxBounces;
@@ -1521,23 +1521,23 @@ input:checked + .slider:before { transform: translateX(30px); }
         f32[20] = vertical[0]; f32[21] = vertical[1]; f32[22] = vertical[2];
         f32[24] = right[0]; f32[25] = right[1]; f32[26] = right[2];
         f32[28] = up[0]; f32[29] = up[1]; f32[30] = up[2];
-        // FIX: Indices 31, 32, 33
+    
         f32[31] = focalDist; f32[32] = lensRadius; u32[33] = lightIndices.length;
         
         device.queue.writeBuffer(bufUniforms, 0, data);
     }
-// Track the last time we sent a progress update
+
     let lastProgressUpdate = 0;
     channel.port1.onmessage = async function() {
         if (!isRunning) return;
 
-        // 1. FINISHED CHECK
+      
         if (frameCount >= targetSamples) {
-            // Wait for final frame to finish
+            
             await device.queue.onSubmittedWorkDone();
             isRunning = false;
 
-            // --- READBACK LOGIC ---
+          
             const bufHashRaw = device.createBuffer({ size: width*height*16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
             const bufHashTemp = device.createBuffer({ size: width*height*16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
             const extractSource = `@group(0) @binding(0) var<storage, read> acc:array<PixelData>; @group(0) @binding(1) var<storage, read_write> out:array<vec4f>; struct PixelData { sum:vec4f, comp:vec4f } @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id:vec3u) { if(id.x < ${width*height}u) { out[id.x] = acc[id.x].sum; } }`;
@@ -1560,23 +1560,21 @@ input:checked + .slider:before { transform: translateX(30px); }
             return;
         }
 
-        // 2. PACED RENDER LOOP (No Batching, just Pipelining)
         
-        // 2. PACED RENDER LOOP (Static Batching)
         updateUniforms(); 
 
         for (let i = 0; i < batchSize; i++) {
-            // Stop immediately if we hit the target
+        
             if (frameCount >= targetSamples) break;
 
-            // Update Frame Count explicitly for this specific dispatch (Crucial for RNG)
+        
             device.queue.writeBuffer(bufUniforms, 8, new Uint32Array([frameCount]));
 
             const encoder = device.createCommandEncoder();
             const pass = encoder.beginComputePass();
             pass.setPipeline(pipeline);
             pass.setBindGroup(0, bindGroup);
-            // LINEAR DISPATCH: 64 threads per group, flat array
+        
             pass.dispatchWorkgroups(Math.ceil((width * height) / 64), 1, 1);
             pass.end();
             device.queue.submit([encoder.finish()]);
@@ -1592,7 +1590,7 @@ input:checked + .slider:before { transform: translateX(30px); }
             lastProgressUpdate = frameCount;
         }
 
-        // Trigger next frame immediately (0ms delay)
+        
         port.postMessage(null);
     };
 
@@ -1610,7 +1608,7 @@ input:checked + .slider:before { transform: translateX(30px); }
             buildScene();
             initWebGPU().then(() => {
                 frameCount = 0; isRunning = true;
-                // Start the fast loop
+               
                 port.postMessage(null);
             }).catch(err => {
                 console.error(err);
@@ -1621,18 +1619,18 @@ input:checked + .slider:before { transform: translateX(30px); }
 </script>
     <script>
     (function() {
-        // --- OPTIMIZATION: Initialize Session ID Immediately ---
+        
 let userSessionId = null;
 try {
     userSessionId = localStorage.getItem('cpu_ball_session');
 } catch(e) { console.warn("LocalStorage blocked"); }
 
 if (!userSessionId) {
-    // Check if secure randomUUID is available
+  
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         userSessionId = crypto.randomUUID();
     } else {
-        // Fallback for HTTP / Older Browsers / Kiwi non-secure context
+       
         userSessionId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
             var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
@@ -1646,24 +1644,24 @@ if (!userSessionId) {
             let currentRenderSettings = null; 
             const startMultiButton = document.getElementById('startMultiButton');
 			const lbToggle = document.getElementById('lbToggle');
-            // State
-            let rendererType = 'cpu'; // 'cpu' or 'gpu'
+           
+            let rendererType = 'cpu'; 
             let leaderboardFilter = 'cpu';
 const viewVerified = document.getElementById('viewVerified');
 const viewPending = document.getElementById('viewPending');
 const lblVerified = document.getElementById('lblVerified');
 const lblPending = document.getElementById('lblPending');
-// TOGGLE LOGIC
+
             const rendererToggle = document.getElementById('rendererToggle');
             const labelCPU = document.getElementById('labelCPU');
             const labelGPU = document.getElementById('labelGPU');
             const threadGroup = document.getElementById('threadInput').parentElement;
 if (lbToggle) {
     lbToggle.addEventListener('click', () => {
-        isPendingView = !isPendingView; // Toggle state
+        isPendingView = !isPendingView; 
 
         if (isPendingView) {
-            // Switch to Pending View
+           
             lbToggle.classList.remove('verified-mode');
             lbToggle.classList.add('pending-mode');
             
@@ -1673,7 +1671,7 @@ if (lbToggle) {
             viewVerified.classList.remove('active-view');
             viewPending.classList.add('active-view');
         } else {
-            // Switch to Verified View
+           
             lbToggle.classList.remove('pending-mode');
             lbToggle.classList.add('verified-mode');
 
@@ -1689,14 +1687,14 @@ if (lbToggle) {
 
             rendererToggle.addEventListener('change', (e) => {
     if (e.target.checked) {
-        // GPU Selected
+       
         rendererType = 'gpu';
         labelCPU.classList.remove('active');
         labelGPU.classList.add('active');
         threadGroup.style.opacity = '0.3'; 
         document.getElementById('threadInput').disabled = true;
     } else {
-        // CPU Selected
+       
         rendererType = 'cpu';
         labelGPU.classList.remove('active');
         labelCPU.classList.add('active');
@@ -1705,21 +1703,21 @@ if (lbToggle) {
     }
     fetchSceneSettings();
 });
-// --- NEW LEADERBOARD TOGGLE LOGIC (Pill Style) ---
+
 const lbTypeWrapper = document.getElementById('lbTypeToggleWrapper');
 
 
 lbTypeWrapper.addEventListener('click', () => {
-    // Toggle based on current class
+    
     if (lbTypeWrapper.classList.contains('cpu-mode')) {
-        // Switch to GPU
+       
         lbTypeWrapper.classList.remove('cpu-mode');
         lbTypeWrapper.classList.add('gpu-mode');
         lblLbCPU.classList.remove('active');
         lblLbGPU.classList.add('active');
         leaderboardFilter = 'gpu';
     } else {
-        // Switch to CPU
+      
         lbTypeWrapper.classList.remove('gpu-mode');
         lbTypeWrapper.classList.add('cpu-mode');
         lblLbGPU.classList.remove('active');
@@ -1962,10 +1960,10 @@ window.addEventListener('resize', scaleResultText);
                                 worker.postMessage({ type: 'init-scene', scene: 'cornell' });
                             } else {
 							 
-                                // FIX: Use 'fileName' (the mapped name) instead of 'benchmarkName'
+                               
                             const jsUrl = `${basePath}/raytracer_${benchmarkName}.js`;
                                 const wasmModule = wasmBinaries[benchmarkName];
-                                // Use 'fileName' to check for legacy, not the raw benchmarkName
+                                
         const isLegacy = legacyScenes.includes(benchmarkName); 
                                 worker.postMessage({ type: 'init-wasm', wasmModule: wasmModule, jsUrl: jsUrl, isLegacy: isLegacy });
                             }
@@ -2002,7 +2000,7 @@ window.addEventListener('resize', scaleResultText);
                 document.getElementById('usernameInput').disabled = true;
                 document.getElementById('sceneSelector').disabled = true;
                 
-                // Show progress bar
+                
                 progressBar.style.display = 'block';
                 progressFill.style.width = '0%';
                 progressText.textContent = "0%";
@@ -2065,18 +2063,18 @@ window.addEventListener('resize', scaleResultText);
                     targetTimeEl.textContent = `${result.time.toFixed(3)}s`;
                     scaleResultText(); 
                     
-                    // Force bar to 100% immediately when render finishes
+                  
                     progressFill.style.width = '100%';
                     progressText.textContent = '100% - Uploading...';
                     
                     statusDiv.textContent = "Validating & Uploading...";
                     statusDiv.style.color = "#ff9800"; 
 
-                    // --- TIMER START: Data Processing ---
+                    
                     const tProcStart = performance.now();
 
                     let hash = "";
-                    // FIX: Define submitBody in outer scope so fetch can see it
+                
                     let submitBody = null; 
                     
                     if (rendererType === 'gpu') {
@@ -2117,32 +2115,32 @@ window.addEventListener('resize', scaleResultText);
                             }
                         }
 
-                        // BINARY PACKING
+                  
                         const totalSize = 8 + (canaries.length * 16) + (blockSums.length * 16);
                         
-                        // FIX: Write directly to submitBody
+               
                         submitBody = new ArrayBuffer(totalSize); 
                         const view = new DataView(submitBody);
                         let offset = 0;
 
-                        // 1. Write Canary Count
+                     
                         view.setUint32(offset, canaries.length, true); offset += 4;
-                        // 2. Write Canaries
+                  
                         for (const c of canaries) {
-                            view.setUint32(offset, c[0], true); offset += 4; // Index
-                            view.setFloat32(offset, c[1], true); offset += 4; // R
-                            view.setFloat32(offset, c[2], true); offset += 4; // G
-                            view.setFloat32(offset, c[3], true); offset += 4; // B
+                            view.setUint32(offset, c[0], true); offset += 4; 
+                            view.setFloat32(offset, c[1], true); offset += 4; 
+                            view.setFloat32(offset, c[2], true); offset += 4; 
+                            view.setFloat32(offset, c[3], true); offset += 4; 
                         }
 
-                        // 3. Write Block Count
+                   
                         view.setUint32(offset, blockSums.length, true); offset += 4;
-                        // 4. Write Blocks
+                       
                         for (const b of blockSums) {
-                            view.setFloat32(offset, b[0], true); offset += 4; // R
-                            view.setFloat32(offset, b[1], true); offset += 4; // G
-                            view.setFloat32(offset, b[2], true); offset += 4; // B
-                            view.setUint32(offset, b[3], true); offset += 4; // Pixel Count
+                            view.setFloat32(offset, b[0], true); offset += 4;
+                            view.setFloat32(offset, b[1], true); offset += 4; 
+                            view.setFloat32(offset, b[2], true); offset += 4; 
+                            view.setUint32(offset, b[3], true); offset += 4; 
                         }
 
                         hash = ""; 
@@ -2150,11 +2148,11 @@ window.addEventListener('resize', scaleResultText);
                         hash = await cryptoHash(result.buffer);
                     }
 
-                    // --- TIMER END: Data Processing ---
+                    
                     const tProcEnd = performance.now();
                     console.log(`[Perf] Data Processing: ${(tProcEnd - tProcStart).toFixed(2)}ms`);
 
-                    // --- TIMER START: Network ---
+                   
                     const tNetStart = performance.now();
 
                     const headers = {
@@ -2171,10 +2169,10 @@ window.addEventListener('resize', scaleResultText);
                     const subRes = await fetch(`${backendUrl}/api/submit`, {
                         method: 'POST',
                         headers: headers,
-                        body: submitBody // FIX: Pass the binary buffer directly
+                        body: submitBody 
                     });
 
-                    // --- TIMER END: Network ---
+                  
                     const tNetEnd = performance.now();
                     console.log(`[Perf] Network Upload: ${(tNetEnd - tNetStart).toFixed(2)}ms`);
 
@@ -2187,11 +2185,11 @@ window.addEventListener('resize', scaleResultText);
                     }
                     
                     if (subRes.ok) {
-    // 1. Update Status Text
+   
     statusDiv.textContent = `Saved to History! Score: ${(subJson.server_score / 1000).toFixed(3)}s`;
     statusDiv.style.color = "#28a745"; 
 const isGpuRun = (rendererType === 'gpu');
-   // Update the toggle UI visually to match the run
+  
    if (isGpuRun) {
        lbTypeWrapper.classList.remove('cpu-mode');
        lbTypeWrapper.classList.add('gpu-mode');
@@ -2727,13 +2725,12 @@ document.getElementById('startMultiButton').addEventListener('click', () => {
             <tbody>`;
         
         data.forEach(row => {
-            // 1. Renderer Formatting
+          
             const rend = (row.renderer_type || 'cpu').toUpperCase();
-            // GPU is now RED (#d93025), CPU is Green
+           
             const rendColor = rend === 'GPU' ? '#d93025' : '#28a745'; 
 
-            // 2. Scene Friendly Name Lookup
-            // We use the global 'sceneDisplayNames' object defined earlier in your script
+           
             const friendlyScene = sceneDisplayNames[row.scene] || row.scene;
 
             html += `
@@ -2744,7 +2741,7 @@ document.getElementById('startMultiButton').addEventListener('click', () => {
                 <td style="padding: 12px; text-align: center; font-weight: bold; color: ${rendColor};">
                     ${rend}
                 </td>
-                <!-- Scaled down font for friendly name -->
+                
                 <td style="padding: 12px; text-align: center; color: #ccc; font-size: 0.85em;">
                     ${friendlyScene}
                 </td>
@@ -2885,7 +2882,7 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
                         }
                     };
                     
-                    // 3. HANDLE SCRIPT ERRORS
+                  
                     worker.onerror = (e) => {
                         worker.terminate();
                         alert("The benchmark has stopped abruptly, slow devices are still WIP and might often crash");
@@ -2902,7 +2899,34 @@ function runGpuBenchmark(settings, seedLo, seedHi, targetTimeEl) {
             }
 
 
-// 1. Auto-create Overlay if missing
+
+function setupMobileTooltip(elementId) {
+    const el = document.getElementById(elementId);
+    if (el) {
+        el.addEventListener('click', (e) => {
+         
+            if (window.innerWidth <= 768) {
+                e.stopPropagation();
+                
+                const wasActive = el.classList.contains('active');
+                
+                
+                document.querySelectorAll('.info-icon.active').forEach(i => i.classList.remove('active'));
+                document.getElementById('mobile-tooltip-overlay').style.display = 'none';
+
+                
+                if (!wasActive) {
+                    el.classList.add('active');
+                    document.getElementById('mobile-tooltip-overlay').style.display = 'block';
+                }
+            }
+        });
+    }
+}
+
+
+setupMobileTooltip('pendingInfoIcon');
+setupMobileTooltip('experimentalInfoIcon');
 let overlay = document.getElementById('mobile-tooltip-overlay');
 if (!overlay) {
     overlay = document.createElement('div');
@@ -2910,9 +2934,9 @@ if (!overlay) {
     document.body.appendChild(overlay);
 }
 
-// 2. Function to Close Tooltip
+
 function closeAllTooltips(e) {
-    // Prevent the tap from passing through to buttons behind the overlay
+ 
     if (e) {
         if (e.cancelable) e.preventDefault();
         e.stopPropagation();
@@ -2922,17 +2946,17 @@ function closeAllTooltips(e) {
     
     document.querySelectorAll('.info-icon.active').forEach(el => {
         el.classList.remove('active');
-        // Important: Remove focus so it doesn't auto-reopen
+        
         el.blur(); 
     });
 }
 
-// 3. Attach Listeners to Overlay
+
 overlay.addEventListener('click', closeAllTooltips);
-// "passive: false" is required to use preventDefault() on touch events
+
 overlay.addEventListener('touchstart', closeAllTooltips, {passive: false});
 
-// 4. Close on Escape (Desktop)
+
 document.addEventListener('keydown', (e) => {
     if (e.key === "Escape") closeAllTooltips();
 });
