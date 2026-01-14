@@ -657,7 +657,7 @@ input:checked + .slider:before { transform: translateX(30px); }
                 </div>
                
                
-         
+                <!-- Admin stuff, not vulnerable so don't even try -->
                 <div id="test-env-section" class="control-group" style="display: none; border: 1px solid #d93025; padding: 10px; border-radius: 8px; margin-top: 10px;">
                     <legend style="color: #d93025; font-weight: bold;">Admin Panel</legend>
                     <div class="inline-group">
@@ -2459,7 +2459,7 @@ document.getElementById('startMultiButton').addEventListener('click', () => {
     triggerBenchmark(numThreads);
 });
 			
-			
+			// Admin stuff, not vulnerable so don't even try
             document.getElementById('verifyPendingButton').addEventListener('click', async () => {
                 const secret = prompt("Enter Admin Secret to START verification loop:");
                 if (!secret) return;
